@@ -1,263 +1,1181 @@
-import React, { useState } from 'react';
+
+import React, { useEffect, useState } from "react";
 import {
-  SafeAreaView,
-  ScrollView,
   View,
   Text,
-  TouchableOpacity,
-  Switch,
   StyleSheet,
-  Image,
-} from 'react-native';
+  TouchableOpacity,
+  TextInput,
+  Switch,
+  ScrollView,
+  Alert,
+  Modal,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 
-// ---------- Types ----------
+const SOS_CONTACTS_KEY = "sosEmergencyContacts";
 
-interface SettingItemProps {
-  label: string;
-  subtitle?: string;
-  onPress?: () => void;
-  rightElement?: React.ReactNode;
-  danger?: boolean;
-}
+export default function Settings() {
+  // Profile
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
 
-interface ToggleItemProps {
-  label: string;
-  value: boolean;
-  onValueChange: (value: boolean) => void;
-}
+  // Emergency Contacts
+  const [contact1, setContact1] = useState("");
+  const [contact2, setContact2] = useState("");
 
-interface SettingsScreenProps {
-  navigation?: {
-    navigate: (screen: string) => void;
+  // Settings
+  const [locationEnabled, setLocationEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [dangerAlerts, setDangerAlerts] = useState(true);
+
+  // Modals
+  const [showContacts, setShowContacts] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  // Load saved data
+  const loadSettings = async () => {
+    try {
+      // Load emergency contacts
+      const savedContacts = await AsyncStorage.getItem(
+        SOS_CONTACTS_KEY
+      );
+
+      if (savedContacts) {
+        const contacts = JSON.parse(savedContacts);
+
+        setContact1(contacts.contact1 || "");
+        setContact2(contacts.contact2 || "");
+      }
+
+      // Load profile
+      const savedName = await AsyncStorage.getItem("touristName");
+      const savedPhone = await AsyncStorage.getItem("touristPhone");
+
+      if (savedName) {
+        setName(savedName);
+      }
+
+      if (savedPhone) {
+        setPhone(savedPhone);
+      }
+    } catch (error) {
+      console.log("Error loading settings:", error);
+    }
   };
-}
 
-// ---------- Reusable Components ----------
+  // Save emergency contacts
+  const saveEmergencyContacts = async () => {
+    if (!contact1.trim() || !contact2.trim()) {
+      Alert.alert(
+        "Emergency Contacts Required",
+        "Please enter both emergency contacts."
+      );
+      return;
+    }
 
-const SectionHeader = ({ title }: { title: string }) => (
-  <Text style={styles.sectionHeader}>{title}</Text>
-);
+    if (contact1.length < 10 || contact2.length < 10) {
+      Alert.alert(
+        "Invalid Number",
+        "Please enter valid 10-digit mobile numbers."
+      );
+      return;
+    }
 
-const SettingItem: React.FC<SettingItemProps> = ({
-  label,
-  subtitle,
-  onPress,
-  rightElement,
-  danger,
-}) => (
-  <TouchableOpacity style={styles.item} onPress={onPress} activeOpacity={0.7}>
-    <View style={{ flex: 1 }}>
-      <Text style={[styles.itemLabel, danger && styles.dangerText]}>
-        {label}
-      </Text>
-      {subtitle ? <Text style={styles.itemSubtitle}>{subtitle}</Text> : null}
-    </View>
-    {rightElement ? rightElement : <Text style={styles.chevron}>›</Text>}
-  </TouchableOpacity>
-);
+    try {
+      const contacts = {
+        contact1,
+        contact2,
+      };
 
-const ToggleItem: React.FC<ToggleItemProps> = ({
-  label,
-  value,
-  onValueChange,
-}) => (
-  <View style={styles.item}>
-    <Text style={styles.itemLabel}>{label}</Text>
-    <Switch value={value} onValueChange={onValueChange} />
-  </View>
-);
+      await AsyncStorage.setItem(
+        SOS_CONTACTS_KEY,
+        JSON.stringify(contacts)
+      );
 
-// ---------- Main Screen ----------
+      Alert.alert(
+        "Contacts Saved",
+        "Your emergency contacts have been saved successfully."
+      );
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
-  const [pushEnabled, setPushEnabled] = useState<boolean>(true);
-  const [emailEnabled, setEmailEnabled] = useState<boolean>(false);
-  const [darkMode, setDarkMode] = useState<boolean>(false);
-  const [twoFactor, setTwoFactor] = useState<boolean>(false);
+      setShowContacts(false);
+    } catch (error) {
+      console.log("Error saving contacts:", error);
+
+      Alert.alert(
+        "Error",
+        "Unable to save emergency contacts."
+      );
+    }
+  };
+
+  // Save profile
+  const saveProfile = async () => {
+    if (!name.trim()) {
+      Alert.alert(
+        "Name Required",
+        "Please enter your name."
+      );
+      return;
+    }
+
+    if (!phone.trim() || phone.length < 10) {
+      Alert.alert(
+        "Invalid Phone Number",
+        "Please enter a valid 10-digit mobile number."
+      );
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        "touristName",
+        name.trim()
+      );
+
+      await AsyncStorage.setItem(
+        "touristPhone",
+        phone.trim()
+      );
+
+      setShowProfileEdit(false);
+
+      Alert.alert(
+        "Profile Saved",
+        "Your profile information has been updated."
+      );
+    } catch (error) {
+      console.log("Error saving profile:", error);
+
+      Alert.alert(
+        "Error",
+        "Unable to save profile information."
+      );
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Profile Header */}
-        <View style={styles.profileCard}>
-          <Image
-            source={{ uri: 'https://placehold.co/80x80' }}
-            style={styles.avatar}
+    <View style={styles.container}>
+
+      {/* HEADER */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Settings</Text>
+
+          <Text style={styles.subtitle}>
+            Manage your safety preferences
+          </Text>
+        </View>
+
+        <View style={styles.headerIcon}>
+          <Ionicons
+            name="settings-outline"
+            size={24}
+            color="#00D4FF"
           />
-          <View style={{ marginLeft: 14 }}>
-            <Text style={styles.name}>Rohit Sharma</Text>
-            <Text style={styles.email}>rohit.sharma@example.com</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+
+        {/* PROFILE */}
+        <Text style={styles.sectionTitle}>
+          PROFILE
+        </Text>
+
+        <View style={styles.card}>
+
+          <View style={styles.profileIcon}>
+            <Ionicons
+              name="person"
+              size={28}
+              color="#00D4FF"
+            />
           </View>
+
+          <View style={styles.profileInfo}>
+
+            <Text style={styles.profileName}>
+              {name || "Tourist"}
+            </Text>
+
+            <Text style={styles.profilePhone}>
+              {phone || "Phone number not added"}
+            </Text>
+
+          </View>
+
+          {/* EDIT PROFILE */}
+          <TouchableOpacity
+            onPress={() => setShowProfileEdit(true)}
+          >
+            <Ionicons
+              name="create-outline"
+              size={23}
+              color="#8F91A3"
+            />
+          </TouchableOpacity>
+
         </View>
 
-        {/* Account Settings */}
-        <SectionHeader title="Account" />
-        <View style={styles.card}>
-          <SettingItem
-            label="Edit Profile"
-            onPress={() => navigation?.navigate('EditProfile')}
+
+        {/* EMERGENCY */}
+        <Text style={styles.sectionTitle}>
+          EMERGENCY & SOS
+        </Text>
+
+        <TouchableOpacity
+          style={styles.settingCard}
+          onPress={() => setShowContacts(true)}
+        >
+
+          <View style={styles.settingIconSOS}>
+            <Ionicons
+              name="call"
+              size={23}
+              color="#FF5B6E"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              Emergency Contacts
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Add 2 contacts for SOS alerts
+            </Text>
+
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={22}
+            color="#777A8C"
           />
-          <SettingItem
-            label="Change Password"
-            onPress={() => navigation?.navigate('ChangePassword')}
-          />
-          <ToggleItem
-            label="Two-Factor Authentication"
-            value={twoFactor}
-            onValueChange={setTwoFactor}
-          />
+
+        </TouchableOpacity>
+
+
+        {/* CONTACT STATUS */}
+        <View style={styles.contactStatus}>
+
+          <View style={styles.statusDot} />
+
+          <Text style={styles.statusText}>
+            {contact1 && contact2
+              ? "2 emergency contacts saved"
+              : "Emergency contacts not completely set"}
+          </Text>
+
         </View>
 
-        {/* Notifications */}
-        <SectionHeader title="Notifications" />
-        <View style={styles.card}>
-          <ToggleItem
-            label="Push Notifications"
-            value={pushEnabled}
-            onValueChange={setPushEnabled}
+
+        {/* SAFETY SETTINGS */}
+        <Text style={styles.sectionTitle}>
+          SAFETY SETTINGS
+        </Text>
+
+
+        {/* LOCATION */}
+        <View style={styles.settingCard}>
+
+          <View style={styles.settingIcon}>
+            <Ionicons
+              name="location"
+              size={23}
+              color="#00D4FF"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              Location Services
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Allow Safe Tourism to track your location
+            </Text>
+
+          </View>
+
+          <Switch
+            value={locationEnabled}
+            onValueChange={setLocationEnabled}
+            trackColor={{
+              false: "#303342",
+              true: "#343A73",
+            }}
+            thumbColor={
+              locationEnabled
+                ? "#00D4FF"
+                : "#777"
+            }
           />
-          <ToggleItem
-            label="Email Notifications"
-            value={emailEnabled}
-            onValueChange={setEmailEnabled}
-          />
+
         </View>
 
-        {/* Preferences */}
-        <SectionHeader title="Preferences" />
-        <View style={styles.card}>
-          <ToggleItem
-            label="Dark Mode"
-            value={darkMode}
-            onValueChange={setDarkMode}
+
+        {/* NOTIFICATIONS */}
+        <View style={styles.settingCard}>
+
+          <View style={styles.settingIcon}>
+            <Ionicons
+              name="notifications"
+              size={23}
+              color="#6C63FF"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              Safety Notifications
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Receive important safety alerts
+            </Text>
+
+          </View>
+
+          <Switch
+            value={notificationsEnabled}
+            onValueChange={setNotificationsEnabled}
+            trackColor={{
+              false: "#303342",
+              true: "#343A73",
+            }}
+            thumbColor={
+              notificationsEnabled
+                ? "#6C63FF"
+                : "#777"
+            }
           />
-          <SettingItem
-            label="Language"
-            subtitle="English"
-            onPress={() => navigation?.navigate('LanguageSettings')}
-          />
+
         </View>
 
-        {/* Privacy & Security */}
-        <SectionHeader title="Privacy & Security" />
-        <View style={styles.card}>
-          <SettingItem
-            label="Blocked Users"
-            onPress={() => navigation?.navigate('BlockedUsers')}
+
+        {/* DANGER ALERT */}
+        <View style={styles.settingCard}>
+
+          <View style={styles.settingIconDanger}>
+            <Ionicons
+              name="warning"
+              size={23}
+              color="#FFB547"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              Danger Zone Alerts
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Alert me when entering unsafe areas
+            </Text>
+
+          </View>
+
+          <Switch
+            value={dangerAlerts}
+            onValueChange={setDangerAlerts}
+            trackColor={{
+              false: "#303342",
+              true: "#343A73",
+            }}
+            thumbColor={
+              dangerAlerts
+                ? "#FFB547"
+                : "#777"
+            }
           />
-          <SettingItem
-            label="Login History"
-            onPress={() => navigation?.navigate('LoginHistory')}
-          />
+
         </View>
 
-        {/* Support */}
-        <SectionHeader title="Support" />
-        <View style={styles.card}>
-          <SettingItem
-            label="Help Center"
-            onPress={() => navigation?.navigate('HelpCenter')}
-          />
-          <SettingItem
-            label="Contact Us"
-            onPress={() => navigation?.navigate('ContactUs')}
-          />
-        </View>
 
-        {/* Danger Zone */}
-        <SectionHeader title="Account Actions" />
-        <View style={styles.card}>
-          <SettingItem
-            label="Log Out"
-            onPress={() => console.log('Logout pressed')}
-            danger
+        {/* PRIVACY */}
+        <Text style={styles.sectionTitle}>
+          PRIVACY & INFORMATION
+        </Text>
+
+
+        {/* PRIVACY & SECURITY */}
+        <TouchableOpacity
+          style={styles.settingCard}
+        >
+
+          <View style={styles.settingIcon}>
+            <Ionicons
+              name="shield-checkmark"
+              size={23}
+              color="#6C63FF"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              Privacy & Security
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Manage your personal data and privacy
+            </Text>
+
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={22}
+            color="#777A8C"
           />
-          <SettingItem
-            label="Delete Account"
-            onPress={() => console.log('Delete account pressed')}
-            danger
+
+        </TouchableOpacity>
+
+
+        {/* ABOUT */}
+        <TouchableOpacity
+          style={styles.settingCard}
+        >
+
+          <View style={styles.settingIcon}>
+            <Ionicons
+              name="information-circle"
+              size={23}
+              color="#00D4FF"
+            />
+          </View>
+
+          <View style={styles.settingTextContainer}>
+
+            <Text style={styles.settingTitle}>
+              About Safe Tourism
+            </Text>
+
+            <Text style={styles.settingDescription}>
+              Version 1.0.0
+            </Text>
+
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={22}
+            color="#777A8C"
           />
-        </View>
+
+        </TouchableOpacity>
+
+
+        {/* LOGOUT */}
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() =>
+            Alert.alert(
+              "Logout",
+              "Are you sure you want to logout?",
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel",
+                },
+                {
+                  text: "Logout",
+                  style: "destructive",
+                },
+              ]
+            )
+          }
+        >
+
+          <Ionicons
+            name="log-out-outline"
+            size={22}
+            color="#FF5B6E"
+          />
+
+          <Text style={styles.logoutText}>
+            Logout
+          </Text>
+
+        </TouchableOpacity>
+
+
+        {/* FOOTER */}
+        <Text style={styles.footer}>
+          SAFE TOURISM{"\n"}
+          Travel Safe. Explore Freely.
+        </Text>
+
       </ScrollView>
-    </SafeAreaView>
+
+
+      {/* ========================================= */}
+      {/* PROFILE EDIT MODAL */}
+      {/* ========================================= */}
+
+      <Modal
+        visible={showProfileEdit}
+        transparent
+        animationType="slide"
+        onRequestClose={() =>
+          setShowProfileEdit(false)
+        }
+      >
+
+        <View style={styles.modalOverlay}>
+
+          <View style={styles.modalContainer}>
+
+            {/* MODAL HEADER */}
+            <View style={styles.modalHeader}>
+
+              <View>
+
+                <Text style={styles.modalTitle}>
+                  Edit Profile
+                </Text>
+
+                <Text style={styles.modalSubtitle}>
+                  Update your personal information
+                </Text>
+
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowProfileEdit(false)
+                }
+              >
+
+                <Ionicons
+                  name="close-circle"
+                  size={28}
+                  color="#777A8C"
+                />
+
+              </TouchableOpacity>
+
+            </View>
+
+
+            {/* NAME */}
+            <Text style={styles.inputLabel}>
+              Your Name
+            </Text>
+
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Enter your name"
+              placeholderTextColor="#666A7A"
+              style={styles.input}
+            />
+
+
+            {/* PHONE */}
+            <Text style={styles.inputLabel}>
+              Phone Number
+            </Text>
+
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Enter phone number"
+              placeholderTextColor="#666A7A"
+              keyboardType="phone-pad"
+              maxLength={10}
+              style={styles.input}
+            />
+
+
+            {/* SAVE PROFILE */}
+            <TouchableOpacity
+              style={styles.saveContactsButton}
+              onPress={saveProfile}
+            >
+
+              <Ionicons
+                name="checkmark-circle"
+                size={22}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.saveContactsText}>
+                Save Profile
+              </Text>
+
+            </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+      </Modal>
+
+
+      {/* ========================================= */}
+      {/* EMERGENCY CONTACT MODAL */}
+      {/* ========================================= */}
+
+      <Modal
+        visible={showContacts}
+        transparent
+        animationType="slide"
+        onRequestClose={() =>
+          setShowContacts(false)
+        }
+      >
+
+        <View style={styles.modalOverlay}>
+
+          <View style={styles.modalContainer}>
+
+            {/* MODAL HEADER */}
+            <View style={styles.modalHeader}>
+
+              <View>
+
+                <Text style={styles.modalTitle}>
+                  Emergency Contacts
+                </Text>
+
+                <Text style={styles.modalSubtitle}>
+                  These contacts will receive your SOS alert
+                </Text>
+
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowContacts(false)
+                }
+              >
+
+                <Ionicons
+                  name="close-circle"
+                  size={28}
+                  color="#777A8C"
+                />
+
+              </TouchableOpacity>
+
+            </View>
+
+
+            {/* WARNING */}
+            <View style={styles.warningBox}>
+
+              <Ionicons
+                name="shield-checkmark"
+                size={24}
+                color="#FFB547"
+              />
+
+              <Text style={styles.warningText}>
+                Add two trusted people who can help you
+                during an emergency.
+              </Text>
+
+            </View>
+
+
+            {/* CONTACT 1 */}
+            <Text style={styles.inputLabel}>
+              Emergency Contact 1
+            </Text>
+
+            <View style={styles.phoneInput}>
+
+              <Ionicons
+                name="person"
+                size={20}
+                color="#777A8C"
+              />
+
+              <TextInput
+                value={contact1}
+                onChangeText={setContact1}
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#666A7A"
+                keyboardType="phone-pad"
+                maxLength={10}
+                style={styles.phoneTextInput}
+              />
+
+            </View>
+
+
+            {/* CONTACT 2 */}
+            <Text style={styles.inputLabel}>
+              Emergency Contact 2
+            </Text>
+
+            <View style={styles.phoneInput}>
+
+              <Ionicons
+                name="person"
+                size={20}
+                color="#777A8C"
+              />
+
+              <TextInput
+                value={contact2}
+                onChangeText={setContact2}
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#666A7A"
+                keyboardType="phone-pad"
+                maxLength={10}
+                style={styles.phoneTextInput}
+              />
+
+            </View>
+
+
+            {/* SAVE CONTACTS */}
+            <TouchableOpacity
+              style={styles.saveContactsButton}
+              onPress={saveEmergencyContacts}
+            >
+
+              <Ionicons
+                name="checkmark-circle"
+                size={22}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.saveContactsText}>
+                Save Emergency Contacts
+              </Text>
+
+            </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+      </Modal>
+
+    </View>
   );
-};
+}
 
-export default SettingsScreen;
-
-// ---------- Styles ----------
 
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F7',
+    backgroundColor: "#070B18",
   },
+
+
+  // HEADER
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 25,
+    paddingBottom: 14,
+
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  title: {
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "800",
+  },
+
+  subtitle: {
+    color: "#777A8C",
+    fontSize: 13,
+    marginTop: 3,
+  },
+
+  headerIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    backgroundColor: "#11182B",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+
+  // SCROLL
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 20,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#ddd',
-  },
-  name: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#111',
-  },
-  email: {
-    fontSize: 13,
-    color: '#777',
-    marginTop: 2,
-  },
-  sectionHeader: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#888',
-    textTransform: 'uppercase',
-    marginBottom: 8,
-    marginTop: 12,
-    marginLeft: 4,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E5E5',
-  },
-  itemLabel: {
-    fontSize: 15,
-    color: '#111',
-  },
-  itemSubtitle: {
+
+
+  // SECTION TITLE
+  sectionTitle: {
+    color: "#777A8C",
     fontSize: 12,
-    color: '#999',
-    marginTop: 2,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+
+    marginTop: 15,
+    marginBottom: 9,
   },
-  dangerText: {
-    color: '#E53935',
+
+
+  // PROFILE CARD
+  card: {
+    backgroundColor: "#10172A",
+    borderRadius: 18,
+
+    padding: 16,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: "#1C253D",
   },
-  chevron: {
-    fontSize: 20,
-    color: '#C7C7CC',
+
+  profileIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+
+    backgroundColor: "#17223A",
+
+    alignItems: "center",
+    justifyContent: "center",
   },
+
+  profileInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+
+  profileName: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  profilePhone: {
+    color: "#777A8C",
+    fontSize: 13,
+    marginTop: 3,
+  },
+
+
+  // SETTINGS CARD
+  settingCard: {
+    backgroundColor: "#10172A",
+    borderRadius: 17,
+
+    padding: 15,
+    marginBottom: 9,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: "#1B2439",
+  },
+
+  settingIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+
+    backgroundColor: "#151D34",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  settingIconSOS: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+
+    backgroundColor: "#291923",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  settingIconDanger: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+
+    backgroundColor: "#292318",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  settingTextContainer: {
+    flex: 1,
+    marginLeft: 13,
+    marginRight: 8,
+  },
+
+  settingTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  settingDescription: {
+    color: "#777A8C",
+    fontSize: 11.5,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+
+
+  // CONTACT STATUS
+  contactStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+
+    marginTop: 1,
+    marginBottom: 2,
+  },
+
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 10,
+
+    backgroundColor: "#00D4FF",
+
+    marginLeft: 5,
+    marginRight: 8,
+  },
+
+  statusText: {
+    color: "#777A8C",
+    fontSize: 11,
+  },
+
+
+  // LOGOUT
+  logoutButton: {
+    height: 52,
+    borderRadius: 15,
+
+    borderWidth: 1,
+    borderColor: "#3A2029",
+
+    backgroundColor: "#17121C",
+
+    marginTop: 25,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+
+    gap: 8,
+  },
+
+  logoutText: {
+    color: "#FF5B6E",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+
+  // FOOTER
+  footer: {
+    textAlign: "center",
+
+    color: "#41475A",
+
+    fontSize: 10,
+    lineHeight: 17,
+
+    marginTop: 28,
+
+    letterSpacing: 1,
+  },
+
+
+  // MODAL
+  modalOverlay: {
+    flex: 1,
+
+    backgroundColor: "rgba(0,0,0,0.75)",
+
+    justifyContent: "flex-end",
+  },
+
+  modalContainer: {
+    backgroundColor: "#0D1425",
+
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+
+    padding: 22,
+    paddingBottom: 35,
+
+    borderTopWidth: 1,
+    borderColor: "#27304A",
+  },
+
+  modalHeader: {
+    flexDirection: "row",
+
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+
+    marginBottom: 18,
+  },
+
+  modalTitle: {
+    color: "#FFFFFF",
+
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  modalSubtitle: {
+    color: "#777A8C",
+
+    fontSize: 12,
+
+    marginTop: 5,
+
+    maxWidth: 280,
+  },
+
+
+  // INPUT
+  inputLabel: {
+    color: "#A7AABC",
+
+    fontSize: 12,
+    fontWeight: "600",
+
+    marginBottom: 7,
+    marginTop: 8,
+  },
+
+  input: {
+    backgroundColor: "#080D1A",
+
+    borderRadius: 12,
+
+    borderWidth: 1,
+    borderColor: "#252D42",
+
+    color: "#FFFFFF",
+
+    paddingHorizontal: 14,
+
+    height: 48,
+  },
+
+
+  // WARNING
+  warningBox: {
+    flexDirection: "row",
+    alignItems: "center",
+
+    backgroundColor: "#211C13",
+
+    borderWidth: 1,
+    borderColor: "#3B321F",
+
+    borderRadius: 14,
+
+    padding: 12,
+
+    marginBottom: 12,
+  },
+
+  warningText: {
+    flex: 1,
+
+    color: "#B8A982",
+
+    fontSize: 11.5,
+
+    lineHeight: 17,
+
+    marginLeft: 10,
+  },
+
+
+  // PHONE INPUT
+  phoneInput: {
+    height: 52,
+
+    backgroundColor: "#080D1A",
+
+    borderRadius: 14,
+
+    borderWidth: 1,
+    borderColor: "#252D42",
+
+    flexDirection: "row",
+
+    alignItems: "center",
+
+    paddingHorizontal: 14,
+
+    marginBottom: 8,
+  },
+
+  phoneTextInput: {
+    flex: 1,
+
+    color: "#FFFFFF",
+
+    fontSize: 15,
+
+    marginLeft: 10,
+  },
+
+
+  // SAVE BUTTON
+  saveContactsButton: {
+    height: 52,
+
+    borderRadius: 15,
+
+    backgroundColor: "#6C63FF",
+
+    flexDirection: "row",
+
+    alignItems: "center",
+
+    justifyContent: "center",
+
+    marginTop: 15,
+
+    gap: 8,
+  },
+
+  saveContactsText: {
+    color: "#FFFFFF",
+
+    fontSize: 14,
+
+    fontWeight: "800",
+  },
+
 });
+
