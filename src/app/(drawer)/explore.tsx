@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -51,6 +51,35 @@ const categories: Category[] = [
   },
 ];
 
+// =====================================================
+// HELPER: fetch with a hard timeout
+// This is the #1 fix for slowness — without this, a slow
+// server can hang the request for 30-60+ seconds before
+// the next one is even tried.
+// =====================================================
+
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 8000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    timeoutMs
+  );
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 export default function Explore() {
   const [location, setLocation] = useState("");
   const [searchedLocation, setSearchedLocation] = useState("");
@@ -67,6 +96,10 @@ export default function Explore() {
 
   const [longitude, setLongitude] =
     useState<number | null>(null);
+
+  // Simple in-memory cache so switching back to a category
+  // you already loaded is instant instead of re-fetching.
+  const cacheRef = useRef<Record<string, Place[]>>({});
 
   // =====================================================
   // SEARCH LOCATION
@@ -85,44 +118,42 @@ export default function Explore() {
       setLoading(true);
       setSearched(false);
       setPlaces([]);
+      cacheRef.current = {};
 
       const query = encodeURIComponent(
         location.trim()
       );
 
-      const url =
-        `https://nominatim.openstreetmap.org/search` +
-        `?format=json&limit=1&q=${query}`;
+      // Get your free key at https://locationiq.com/register
+      // Paste it below between the quotes.
+      const LOCATIONIQ_API_KEY =
+        "pk.7ea3dec3ef58d5b3abb02554183bda0d";
 
-      const response = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent":
-            "SafeTourismApp/1.0",
+      const url =
+        `https://us1.locationiq.com/v1/search` +
+        `?key=${LOCATIONIQ_API_KEY}&q=${query}&format=json&limit=1`;
+
+      const response = await fetchWithTimeout(
+        url,
+        {
+          headers: {
+            Accept: "application/json",
+          },
         },
-      });
+        8000
+      );
 
       const text = await response.text();
 
-      console.log(
-        "Nominatim status:",
-        response.status
-      );
-
-      console.log(
-        "Nominatim response:",
-        text.substring(0, 200)
-      );
-
       if (!response.ok) {
         throw new Error(
-          `Nominatim error ${response.status}`
+          `LocationIQ error ${response.status}`
         );
       }
 
       if (text.trim().startsWith("<")) {
         throw new Error(
-          "Nominatim returned HTML"
+          "LocationIQ returned HTML"
         );
       }
 
@@ -178,9 +209,15 @@ export default function Explore() {
         error
       );
 
+      const timedOut =
+        error instanceof Error &&
+        error.name === "AbortError";
+
       Alert.alert(
         "Search Error",
-        "Unable to search this location. Please check your internet connection and try again."
+        timedOut
+          ? "The location search timed out. Please try again."
+          : "Unable to search this location. Please check your internet connection and try again."
       );
     } finally {
       setLoading(false);
@@ -196,11 +233,25 @@ export default function Explore() {
     lon: number,
     category: string
   ) => {
+    // Round coords a bit so the cache key is stable and
+    // returning to the same category/location is instant.
+    const cacheKey = `${category}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
+
+    if (cacheRef.current[cacheKey]) {
+      setPlaces(cacheRef.current[cacheKey]);
+      return;
+    }
+
     try {
       setLoading(true);
       setPlaces([]);
 
-      const radius = 10000;
+      const radius = 8000; // slightly smaller radius = faster Overpass response
+
+      // "out center 40;" caps how many elements Overpass computes
+      // and returns, instead of fetching everything then slicing
+      // client-side. This alone cuts response time a lot in dense cities.
+      const resultCap = 40;
 
       let query = "";
 
@@ -210,7 +261,7 @@ export default function Explore() {
 
       if (category === "places") {
         query = `
-          [out:json][timeout:25];
+          [out:json][timeout:20];
           (
             node["tourism"~"attraction|museum|viewpoint|zoo|theme_park|gallery|artwork"](around:${radius},${lat},${lon});
             way["tourism"~"attraction|museum|viewpoint|zoo|theme_park|gallery|artwork"](around:${radius},${lat},${lon});
@@ -220,7 +271,7 @@ export default function Explore() {
             way["historic"](around:${radius},${lat},${lon});
             relation["historic"](around:${radius},${lat},${lon});
           );
-          out center;
+          out center ${resultCap};
         `;
       }
 
@@ -230,7 +281,7 @@ export default function Explore() {
 
       if (category === "things") {
         query = `
-          [out:json][timeout:25];
+          [out:json][timeout:20];
           (
             node["leisure"~"park|sports_centre|water_park|stadium|pitch"](around:${radius},${lat},${lon});
             way["leisure"~"park|sports_centre|water_park|stadium|pitch"](around:${radius},${lat},${lon});
@@ -240,7 +291,7 @@ export default function Explore() {
             node["tourism"~"theme_park|attraction"](around:${radius},${lat},${lon});
             way["tourism"~"theme_park|attraction"](around:${radius},${lat},${lon});
           );
-          out center;
+          out center ${resultCap};
         `;
       }
 
@@ -250,7 +301,7 @@ export default function Explore() {
 
       if (category === "food") {
         query = `
-          [out:json][timeout:25];
+          [out:json][timeout:20];
           (
             node["amenity"~"restaurant|cafe|fast_food|food_court|bar|pub"](around:${radius},${lat},${lon});
             way["amenity"~"restaurant|cafe|fast_food|food_court|bar|pub"](around:${radius},${lat},${lon});
@@ -258,7 +309,7 @@ export default function Explore() {
             node["shop"~"supermarket|convenience|mall|department_store|marketplace"](around:${radius},${lat},${lon});
             way["shop"~"supermarket|convenience|mall|department_store|marketplace"](around:${radius},${lat},${lon});
           );
-          out center;
+          out center ${resultCap};
         `;
       }
 
@@ -268,7 +319,7 @@ export default function Explore() {
 
       if (category === "photo") {
         query = `
-          [out:json][timeout:25];
+          [out:json][timeout:20];
           (
             node["tourism"="viewpoint"](around:${radius},${lat},${lon});
             way["tourism"="viewpoint"](around:${radius},${lat},${lon});
@@ -276,7 +327,7 @@ export default function Explore() {
             node["natural"~"peak|waterfall|beach|cliff|cave"](around:${radius},${lat},${lon});
             way["natural"~"peak|waterfall|beach|cliff|cave"](around:${radius},${lat},${lon});
           );
-          out center;
+          out center ${resultCap};
         `;
       }
 
@@ -288,8 +339,12 @@ export default function Explore() {
         encodeURIComponent(query);
 
       // =================================================
-      // MULTIPLE OVERPASS SERVERS
-      // If one server fails, next one will be tried.
+      // MULTIPLE OVERPASS SERVERS — RACED IN PARALLEL
+      // Timeout must be >= the query's own [timeout:20],
+      // otherwise the client aborts before the server even
+      // gets a chance to reply — this was causing every
+      // request to look like a failure. POST is also more
+      // reliable than GET for these longer queries.
       // =================================================
 
       const endpoints = [
@@ -298,61 +353,67 @@ export default function Explore() {
         "https://overpass.private.coffee/api/interpreter",
       ];
 
+      const attempt = async (
+        endpoint: string
+      ): Promise<any> => {
+        const response = await fetchWithTimeout(
+          endpoint,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/x-www-form-urlencoded",
+            },
+            body: `data=${encodedQuery}`,
+          },
+          20000 // matches/exceeds the query's own timeout:20
+        );
+
+        const text = await response.text();
+
+        if (!response.ok) {
+          throw new Error(
+            `${endpoint} returned ${response.status}: ${text.substring(0, 150)}`
+          );
+        }
+
+        if (text.trim().startsWith("<")) {
+          throw new Error(
+            `${endpoint} returned HTML: ${text.substring(0, 150)}`
+          );
+        }
+
+        return JSON.parse(text);
+      };
+
       let data: any = null;
 
-      for (const endpoint of endpoints) {
-        try {
-          const url =
-            `${endpoint}?data=${encodedQuery}`;
-
-          console.log(
-            "Trying Overpass:",
-            endpoint
+      try {
+        // Promise.any resolves as soon as ONE endpoint succeeds,
+        // instead of waiting for each one in sequence.
+        data = await Promise.any(
+          endpoints.map((endpoint) =>
+            attempt(endpoint)
+          )
+        );
+      } catch (aggregateError) {
+        // Log EVERY individual failure reason so the real
+        // cause is visible instead of just "all failed".
+        if (
+          aggregateError instanceof AggregateError
+        ) {
+          aggregateError.errors.forEach(
+            (err: any, i: number) => {
+              console.log(
+                `Overpass endpoint ${i} failed:`,
+                err?.message || err
+              );
+            }
           );
-
-          const response =
-            await fetch(url);
-
-          const text =
-            await response.text();
-
+        } else {
           console.log(
-            "Overpass status:",
-            response.status
-          );
-
-          console.log(
-            "Response preview:",
-            text.substring(0, 150)
-          );
-
-          if (!response.ok) {
-            continue;
-          }
-
-          if (
-            text.trim().startsWith("<")
-          ) {
-            console.log(
-              "Server returned HTML, trying next server..."
-            );
-
-            continue;
-          }
-
-          try {
-            data = JSON.parse(text);
-            break;
-          } catch {
-            console.log(
-              "Invalid JSON, trying next server..."
-            );
-          }
-        } catch (error) {
-          console.log(
-            "Endpoint failed:",
-            endpoint,
-            error
+            "Overpass request error:",
+            aggregateError
           );
         }
       }
@@ -446,9 +507,10 @@ export default function Explore() {
             )
         );
 
-      setPlaces(
-        uniquePlaces.slice(0, 30)
-      );
+      const finalPlaces = uniquePlaces.slice(0, 30);
+
+      cacheRef.current[cacheKey] = finalPlaces;
+      setPlaces(finalPlaces);
     } catch (error) {
       console.log(
         "Places error:",

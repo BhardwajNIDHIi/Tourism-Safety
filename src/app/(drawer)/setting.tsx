@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -30,9 +29,15 @@ export default function Settings() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [dangerAlerts, setDangerAlerts] = useState(true);
 
+  // Privacy Settings
+  const [privacyLocation, setPrivacyLocation] = useState(true);
+  const [sosLocationSharing, setSosLocationSharing] = useState(true);
+  const [privacyAlerts, setPrivacyAlerts] = useState(true);
+
   // Modals
   const [showContacts, setShowContacts] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [showPrivacySecurity, setShowPrivacySecurity] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -157,6 +162,50 @@ export default function Settings() {
         "Unable to save profile information."
       );
     }
+  };
+
+  // Clear saved data
+  const clearSavedData = () => {
+    Alert.alert(
+      "Clear Saved Data",
+      "This will remove your saved profile and emergency contact information from this device.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                "touristName",
+                "touristPhone",
+                SOS_CONTACTS_KEY,
+              ]);
+
+              setName("");
+              setPhone("");
+              setContact1("");
+              setContact2("");
+
+              Alert.alert(
+                "Data Cleared",
+                "Your saved personal and emergency contact information has been removed."
+              );
+            } catch (error) {
+              console.log("Error clearing data:", error);
+
+              Alert.alert(
+                "Error",
+                "Unable to clear saved data."
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -415,6 +464,7 @@ export default function Settings() {
         {/* PRIVACY & SECURITY */}
         <TouchableOpacity
           style={styles.settingCard}
+          onPress={() => setShowPrivacySecurity(true)}
         >
 
           <View style={styles.settingIcon}>
@@ -762,6 +812,393 @@ export default function Settings() {
               </Text>
 
             </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+      </Modal>
+
+
+      {/* ========================================= */}
+      {/* PRIVACY & SECURITY MODAL */}
+      {/* ========================================= */}
+
+      <Modal
+        visible={showPrivacySecurity}
+        transparent
+        animationType="slide"
+        onRequestClose={() =>
+          setShowPrivacySecurity(false)
+        }
+      >
+
+        <View style={styles.modalOverlay}>
+
+          <View style={styles.privacyModalContainer}>
+
+            {/* PRIVACY HEADER */}
+            <View style={styles.modalHeader}>
+
+              <View style={styles.privacyHeaderLeft}>
+
+                <View style={styles.privacyShield}>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={27}
+                    color="#6C63FF"
+                  />
+                </View>
+
+                <View style={styles.privacyHeaderText}>
+
+                  <Text style={styles.modalTitle}>
+                    Privacy & Security
+                  </Text>
+
+                  <Text style={styles.modalSubtitle}>
+                    Control your privacy and safety data
+                  </Text>
+
+                </View>
+
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowPrivacySecurity(false)
+                }
+              >
+
+                <Ionicons
+                  name="close-circle"
+                  size={28}
+                  color="#777A8C"
+                />
+
+              </TouchableOpacity>
+
+            </View>
+
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.privacyScroll}
+            >
+
+              {/* PRIVACY INTRO */}
+              <View style={styles.privacyIntro}>
+
+                <Ionicons
+                  name="lock-closed"
+                  size={21}
+                  color="#00D4FF"
+                />
+
+                <View style={styles.privacyIntroText}>
+
+                  <Text style={styles.privacyIntroTitle}>
+                    Your Privacy Matters
+                  </Text>
+
+                  <Text style={styles.privacyIntroDescription}>
+                    Safe Tourism uses your information to provide
+                    location-based safety, emergency assistance
+                    and SOS services.
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              {/* LOCATION SHARING */}
+              <View style={styles.privacySettingCard}>
+
+                <View style={styles.privacySettingIcon}>
+                  <Ionicons
+                    name="location"
+                    size={21}
+                    color="#00D4FF"
+                  />
+                </View>
+
+                <View style={styles.privacySettingText}>
+
+                  <Text style={styles.privacySettingTitle}>
+                    Location Sharing
+                  </Text>
+
+                  <Text style={styles.privacySettingDescription}>
+                    Control the use of your live location for
+                    maps and safety features.
+                  </Text>
+
+                </View>
+
+                <Switch
+                  value={privacyLocation}
+                  onValueChange={(value) => {
+                    setPrivacyLocation(value);
+                    setLocationEnabled(value);
+                  }}
+                  trackColor={{
+                    false: "#303342",
+                    true: "#343A73",
+                  }}
+                  thumbColor={
+                    privacyLocation
+                      ? "#00D4FF"
+                      : "#777"
+                  }
+                />
+
+              </View>
+
+
+              {/* SOS LOCATION */}
+              <View style={styles.privacySettingCard}>
+
+                <View style={styles.privacySettingIconSOS}>
+                  <Ionicons
+                    name="navigate"
+                    size={21}
+                    color="#FF5B6E"
+                  />
+                </View>
+
+                <View style={styles.privacySettingText}>
+
+                  <Text style={styles.privacySettingTitle}>
+                    SOS Location Sharing
+                  </Text>
+
+                  <Text style={styles.privacySettingDescription}>
+                    Allow your location to be shared with
+                    emergency contacts during SOS.
+                  </Text>
+
+                </View>
+
+                <Switch
+                  value={sosLocationSharing}
+                  onValueChange={setSosLocationSharing}
+                  trackColor={{
+                    false: "#303342",
+                    true: "#343A73",
+                  }}
+                  thumbColor={
+                    sosLocationSharing
+                      ? "#FF5B6E"
+                      : "#777"
+                  }
+                />
+
+              </View>
+
+
+              {/* SAFETY ALERTS */}
+              <View style={styles.privacySettingCard}>
+
+                <View style={styles.privacySettingIconPurple}>
+                  <Ionicons
+                    name="notifications"
+                    size={21}
+                    color="#6C63FF"
+                  />
+                </View>
+
+                <View style={styles.privacySettingText}>
+
+                  <Text style={styles.privacySettingTitle}>
+                    Safety Alerts
+                  </Text>
+
+                  <Text style={styles.privacySettingDescription}>
+                    Receive important safety and danger-zone
+                    notifications.
+                  </Text>
+
+                </View>
+
+                <Switch
+                  value={privacyAlerts}
+                  onValueChange={(value) => {
+                    setPrivacyAlerts(value);
+                    setNotificationsEnabled(value);
+                  }}
+                  trackColor={{
+                    false: "#303342",
+                    true: "#343A73",
+                  }}
+                  thumbColor={
+                    privacyAlerts
+                      ? "#6C63FF"
+                      : "#777"
+                  }
+                />
+
+              </View>
+
+
+              {/* EMERGENCY CONTACT PRIVACY */}
+              <View style={styles.privacyInfoCard}>
+
+                <View style={styles.privacyInfoIcon}>
+                  <Ionicons
+                    name="people"
+                    size={21}
+                    color="#FFB547"
+                  />
+                </View>
+
+                <View style={styles.privacyInfoText}>
+
+                  <Text style={styles.privacyInfoTitle}>
+                    Emergency Contact Access
+                  </Text>
+
+                  <Text style={styles.privacyInfoDescription}>
+                    Your saved emergency contacts are used
+                    for SOS alert functionality.
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              {/* DATA PROTECTION */}
+              <View style={styles.privacyInfoCard}>
+
+                <View style={styles.privacyInfoIconBlue}>
+                  <Ionicons
+                    name="shield"
+                    size={21}
+                    color="#00D4FF"
+                  />
+                </View>
+
+                <View style={styles.privacyInfoText}>
+
+                  <Text style={styles.privacyInfoTitle}>
+                    Personal Data
+                  </Text>
+
+                  <Text style={styles.privacyInfoDescription}>
+                    Your profile and emergency contact details
+                    are saved locally on this device for app
+                    functionality.
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              {/* PRIVACY STATUS */}
+              <View style={styles.privacyStatusCard}>
+
+                <Text style={styles.privacyStatusTitle}>
+                  Privacy Status
+                </Text>
+
+                <View style={styles.privacyStatusRow}>
+
+                  <View style={styles.statusDot} />
+
+                  <Text style={styles.privacyStatusText}>
+                    Location Sharing
+                  </Text>
+
+                  <Text style={styles.privacyStatusValue}>
+                    {privacyLocation ? "ON" : "OFF"}
+                  </Text>
+
+                </View>
+
+                <View style={styles.privacyStatusRow}>
+
+                  <View style={styles.statusDot} />
+
+                  <Text style={styles.privacyStatusText}>
+                    SOS Location
+                  </Text>
+
+                  <Text style={styles.privacyStatusValue}>
+                    {sosLocationSharing ? "ON" : "OFF"}
+                  </Text>
+
+                </View>
+
+                <View style={styles.privacyStatusRow}>
+
+                  <View style={styles.statusDot} />
+
+                  <Text style={styles.privacyStatusText}>
+                    Safety Alerts
+                  </Text>
+
+                  <Text style={styles.privacyStatusValue}>
+                    {privacyAlerts ? "ON" : "OFF"}
+                  </Text>
+
+                </View>
+
+              </View>
+
+
+              {/* CLEAR DATA */}
+              <TouchableOpacity
+                style={styles.clearDataButton}
+                onPress={clearSavedData}
+              >
+
+                <View style={styles.clearDataIcon}>
+                  <Ionicons
+                    name="trash-outline"
+                    size={21}
+                    color="#FF5B6E"
+                  />
+                </View>
+
+                <View style={styles.clearDataTextContainer}>
+
+                  <Text style={styles.clearDataTitle}>
+                    Clear Saved Data
+                  </Text>
+
+                  <Text style={styles.clearDataDescription}>
+                    Remove saved profile and emergency
+                    contact information
+                  </Text>
+
+                </View>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color="#777A8C"
+                />
+
+              </TouchableOpacity>
+
+
+              {/* CLOSE */}
+              <TouchableOpacity
+                style={styles.closePrivacyButton}
+                onPress={() =>
+                  setShowPrivacySecurity(false)
+                }
+              >
+
+                <Text style={styles.closePrivacyText}>
+                  Done
+                </Text>
+
+              </TouchableOpacity>
+
+            </ScrollView>
 
           </View>
 
@@ -1177,5 +1614,320 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-});
 
+  // =========================================
+  // PRIVACY & SECURITY
+  // =========================================
+
+  privacyModalContainer: {
+    backgroundColor: "#0D1425",
+
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 25,
+
+    maxHeight: "88%",
+
+    borderTopWidth: 1,
+    borderColor: "#27304A",
+  },
+
+  privacyScroll: {
+    paddingBottom: 10,
+  },
+
+  privacyHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  privacyHeaderText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+
+  privacyShield: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+
+    backgroundColor: "#181A3A",
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: "#302B66",
+  },
+
+  privacyIntro: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+
+    backgroundColor: "#101B30",
+
+    borderWidth: 1,
+    borderColor: "#20314A",
+
+    borderRadius: 16,
+
+    padding: 14,
+
+    marginBottom: 12,
+  },
+
+  privacyIntroText: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  privacyIntroTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  privacyIntroDescription: {
+    color: "#85899B",
+    fontSize: 11.5,
+    lineHeight: 17,
+    marginTop: 5,
+  },
+
+  privacySettingCard: {
+    backgroundColor: "#10172A",
+
+    borderRadius: 16,
+
+    padding: 12,
+
+    marginBottom: 9,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: "#1B2439",
+  },
+
+  privacySettingIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#102936",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  privacySettingIconSOS: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#291923",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  privacySettingIconPurple: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#211E3D",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  privacySettingText: {
+    flex: 1,
+    marginLeft: 11,
+    marginRight: 5,
+  },
+
+  privacySettingTitle: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+
+  privacySettingDescription: {
+    color: "#777A8C",
+    fontSize: 10.5,
+    lineHeight: 15,
+
+    marginTop: 3,
+  },
+
+  privacyInfoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+
+    backgroundColor: "#10172A",
+
+    borderRadius: 15,
+
+    padding: 12,
+
+    marginBottom: 9,
+
+    borderWidth: 1,
+    borderColor: "#1B2439",
+  },
+
+  privacyInfoIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#292318",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  privacyInfoIconBlue: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#102936",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  privacyInfoText: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  privacyInfoTitle: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+
+  privacyInfoDescription: {
+    color: "#777A8C",
+    fontSize: 10.5,
+    lineHeight: 15,
+
+    marginTop: 3,
+  },
+
+  privacyStatusCard: {
+    backgroundColor: "#0A1020",
+
+    borderRadius: 15,
+
+    padding: 14,
+
+    marginTop: 3,
+    marginBottom: 10,
+
+    borderWidth: 1,
+    borderColor: "#202A42",
+  },
+
+  privacyStatusTitle: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "800",
+
+    marginBottom: 9,
+  },
+
+  privacyStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+
+    paddingVertical: 5,
+  },
+
+  privacyStatusText: {
+    color: "#85899B",
+    fontSize: 11.5,
+
+    flex: 1,
+  },
+
+  privacyStatusValue: {
+    color: "#00D4FF",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+
+  clearDataButton: {
+    flexDirection: "row",
+    alignItems: "center",
+
+    backgroundColor: "#17121C",
+
+    borderRadius: 15,
+
+    padding: 12,
+
+    borderWidth: 1,
+    borderColor: "#3A2029",
+
+    marginBottom: 12,
+  },
+
+  clearDataIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+
+    backgroundColor: "#291923",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  clearDataTextContainer: {
+    flex: 1,
+    marginLeft: 11,
+    marginRight: 5,
+  },
+
+  clearDataTitle: {
+    color: "#FF5B6E",
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+
+  clearDataDescription: {
+    color: "#777A8C",
+    fontSize: 10.5,
+    lineHeight: 15,
+
+    marginTop: 3,
+  },
+
+  closePrivacyButton: {
+    height: 50,
+
+    borderRadius: 14,
+
+    backgroundColor: "#6C63FF",
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  closePrivacyText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+});
