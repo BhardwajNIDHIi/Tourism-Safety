@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.ns1703411.safetourismApp"
     },
     "web": {
       "output": "static",
@@ -34,11 +35,23 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyCWsGGp3bdjJ50Ejq-vSzvIFfzsZQXSaMs"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5f6b0d93-52b7-4fdb-a141-f75536dccb60"
+      }
     }
   }
 }

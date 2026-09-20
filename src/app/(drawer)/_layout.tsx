@@ -1,21 +1,21 @@
-import { Drawer } from 'expo-router/drawer';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from "@expo/vector-icons";
+import { Drawer } from "expo-router/drawer";
 
 export default function DrawerLayout() {
   return (
     <Drawer
       screenOptions={{
         // Header (top bar) styling
-        headerStyle: { backgroundColor: '#0B1220' },
-        headerTintColor: '#fff',
+        headerStyle: { backgroundColor: "#0B1220" },
+        headerTintColor: "#fff",
 
         // Drawer (side menu) styling
         drawerStyle: {
-          backgroundColor: '#0B1220',
+          backgroundColor: "#0B1220",
         },
-        drawerActiveTintColor: '#F2A93B',
-        drawerActiveBackgroundColor: '#16233B',
-        drawerInactiveTintColor: '#8FA3BF',
+        drawerActiveTintColor: "#F2A93B",
+        drawerActiveBackgroundColor: "#16233B",
+        drawerInactiveTintColor: "#8FA3BF",
 
         // Bigger top space so items don't sit right under the status bar
         drawerContentContainerStyle: {
@@ -31,30 +31,28 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="index"
         options={{
-          drawerLabel: 'Home',
-          title: 'Home',
+          drawerLabel: "Home",
+          title: "Home",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
-
       <Drawer.Screen
         name="explore"
         options={{
-          drawerLabel: 'Explore',
-          title: 'Explore',
+          drawerLabel: "Explore",
+          title: "Explore",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="earth" size={size} color={color} />
           ),
         }}
       />
-      
       <Drawer.Screen
         name="emergency"
         options={{
-          drawerLabel: 'Emergency',
-          title: 'Emergency',
+          drawerLabel: "Emergency",
+          title: "Emergency",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="alert-circle" size={size} color={color} />
           ),
@@ -63,18 +61,18 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="safetytips"
         options={{
-          drawerLabel: 'Safety Tips',
-          title: 'Safety Tips',
+          drawerLabel: "Safety Tips",
+          title: "Safety Tips",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="shield-checkmark" size={size} color={color} />
           ),
         }}
       />
       <Drawer.Screen
-        name="agents"
+        name="safe-checkin"
         options={{
-          drawerLabel: 'Agents',
-          title: 'Agents',
+          drawerLabel: "Safe-CheckIn",
+          title: "SafeCheckIn",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="people" size={size} color={color} />
           ),
@@ -83,8 +81,8 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="packages"
         options={{
-          drawerLabel: 'Packages',
-          title: 'Packages',
+          drawerLabel: "Packages",
+          title: "Packages",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="briefcase" size={size} color={color} />
           ),
@@ -93,8 +91,8 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="setting"
         options={{
-          drawerLabel: 'Settings',
-          title: 'Settings',
+          drawerLabel: "Settings",
+          title: "Settings",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="settings-outline" size={size} color={color} />
           ),
@@ -103,13 +101,14 @@ export default function DrawerLayout() {
       <Drawer.Screen
         name="aboutsafetourism"
         options={{
-          drawerLabel: 'About Safe Tourism',
-          title: 'About Safe Tourism',
+          drawerLabel: "About Safe Tourism",
+          title: "About Safe Tourism",
           drawerIcon: ({ color, size }) => (
             <Ionicons name="information-circle" size={size} color={color} />
           ),
         }}
-      />,
+      />
+      ,
     </Drawer>
   );
 }
