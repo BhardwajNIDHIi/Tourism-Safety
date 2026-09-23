@@ -1,1145 +1,630 @@
-import React, { useState, useRef } from "react";
+
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
+  ScrollView,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
   ActivityIndicator,
-  Linking,
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-type Place = {
-  id: string;
-  name: string;
-  type: string;
-  lat: string;
-  lon: string;
-  address?: string;
-};
-
-type Category = {
-  id: string;
+type AIResult = {
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  content: string;
 };
 
-const categories: Category[] = [
-  {
-    id: "places",
-    title: "Places to Visit",
-    icon: "map-outline",
-  },
-  {
-    id: "things",
-    title: "Things to Do",
-    icon: "sparkles-outline",
-  },
-  {
-    id: "food",
-    title: "Food & Markets",
-    icon: "restaurant-outline",
-  },
-  {
-    id: "photo",
-    title: "Photo Spots",
-    icon: "camera-outline",
-  },
-];
-
-// =====================================================
-// HELPER: fetch with a hard timeout
-// This is the #1 fix for slowness — without this, a slow
-// server can hang the request for 30-60+ seconds before
-// the next one is even tried.
-// =====================================================
-
-const fetchWithTimeout = async (
-  url: string,
-  options: RequestInit = {},
-  timeoutMs = 8000
-): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    timeoutMs
-  );
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-};
-
-export default function Explore() {
-  const [location, setLocation] = useState("");
-  const [searchedLocation, setSearchedLocation] = useState("");
-
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [selectedCategory, setSelectedCategory] =
-    useState("places");
+export default function ExploreScreen() {
+  const [destination, setDestination] = useState("");
+  const [situation, setSituation] = useState("");
+  const [days, setDays] = useState("3");
+  const [budget, setBudget] = useState("");
+  const [interest, setInterest] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [result, setResult] = useState<AIResult | null>(null);
 
-  const [latitude, setLatitude] =
-    useState<number | null>(null);
+  // ==================================================
+  // GEMINI API
+  // ==================================================
 
-  const [longitude, setLongitude] =
-    useState<number | null>(null);
-
-  // Simple in-memory cache so switching back to a category
-  // you already loaded is instant instead of re-fetching.
-  const cacheRef = useRef<Record<string, Place[]>>({});
-
-  // =====================================================
-  // SEARCH LOCATION
-  // =====================================================
-
-  const searchLocation = async () => {
-    if (!location.trim()) {
-      Alert.alert(
-        "Enter Location",
-        "Please enter a city or destination."
-      );
-      return;
-    }
-
+  const askGemini = async (prompt: string, title: string) => {
     try {
       setLoading(true);
-      setSearched(false);
-      setPlaces([]);
-      cacheRef.current = {};
+      setResult(null);
 
-      const query = encodeURIComponent(
-        location.trim()
-      );
+      // IMPORTANT:
+      // Paste your NEW Gemini API key here.
+      const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
 
-      // Get your free key at https://locationiq.com/register
-      // Paste it below between the quotes.
-      const LOCATIONIQ_API_KEY =
-        "pk.7ea3dec3ef58d5b3abb02554183bda0d";
+      // Check only whether the key is empty.
+      // DO NOT compare it with the actual key.
+      if (!API_KEY.trim()) {
+        Alert.alert(
+          "API Key Missing",
+          "Please add your Gemini API key in explore.tsx."
+        );
+        return;
+      }
 
-      const url =
-        `https://us1.locationiq.com/v1/search` +
-        `?key=${LOCATIONIQ_API_KEY}&q=${query}&format=json&limit=1`;
-
-      const response = await fetchWithTimeout(
-        url,
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
         {
+          method: "POST",
+
           headers: {
-            Accept: "application/json",
+            "Content-Type": "application/json",
+            "x-goog-api-key": API_KEY,
           },
-        },
-        8000
+
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+          }),
+        }
       );
 
-      const text = await response.text();
+      const data = await response.json();
+
+      console.log("Gemini Response:", data);
 
       if (!response.ok) {
+        const errorMessage =
+          data?.error?.message ||
+          "Gemini API request failed.";
+
+        throw new Error(errorMessage);
+      }
+
+      const text =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!text) {
         throw new Error(
-          `LocationIQ error ${response.status}`
+          "No response received from Gemini."
         );
       }
 
-      if (text.trim().startsWith("<")) {
-        throw new Error(
-          "LocationIQ returned HTML"
-        );
-      }
-
-      const data = JSON.parse(text);
-
-      if (!data || data.length === 0) {
-        Alert.alert(
-          "Location Not Found",
-          "Please try another city or destination."
-        );
-
-        return;
-      }
-
-      const lat = Number(data[0].lat);
-      const lon = Number(data[0].lon);
-
-      if (
-        Number.isNaN(lat) ||
-        Number.isNaN(lon)
-      ) {
-        throw new Error(
-          "Invalid coordinates"
-        );
-      }
-
-      setLatitude(lat);
-      setLongitude(lon);
-
-      const displayName =
-        data[0].display_name ||
-        location.trim();
-
-      setSearchedLocation(
-        displayName
-          .split(",")
-          .slice(0, 3)
-          .join(",")
-      );
-
-      setSelectedCategory("places");
-
-      await fetchPlaces(
-        lat,
-        lon,
-        "places"
-      );
-
-      setSearched(true);
-    } catch (error) {
-      console.log(
-        "Location error:",
-        error
-      );
-
-      const timedOut =
-        error instanceof Error &&
-        error.name === "AbortError";
+      setResult({
+        title,
+        content: text,
+      });
+    } catch (error: any) {
+      console.log("Gemini Error:", error);
 
       Alert.alert(
-        "Search Error",
-        timedOut
-          ? "The location search timed out. Please try again."
-          : "Unable to search this location. Please check your internet connection and try again."
+        "AI Error",
+        error?.message ||
+          "Unable to get AI response. Please check your API key and internet connection."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // =====================================================
-  // FETCH REAL PLACES FROM OPENSTREETMAP
-  // =====================================================
+  // ==================================================
+  // DESTINATION EXPLORER
+  // ==================================================
 
-  const fetchPlaces = async (
-    lat: number,
-    lon: number,
-    category: string
-  ) => {
-    // Round coords a bit so the cache key is stable and
-    // returning to the same category/location is instant.
-    const cacheKey = `${category}-${lat.toFixed(3)}-${lon.toFixed(3)}`;
-
-    if (cacheRef.current[cacheKey]) {
-      setPlaces(cacheRef.current[cacheKey]);
+  const exploreDestination = () => {
+    if (!destination.trim()) {
+      Alert.alert(
+        "Enter Destination",
+        "Please enter a destination first."
+      );
       return;
     }
 
-    try {
-      setLoading(true);
-      setPlaces([]);
+    const prompt = `
+You are an AI travel assistant inside a Tourist Safety Enhancement System.
 
-      const radius = 8000; // slightly smaller radius = faster Overpass response
+The tourist wants information about:
 
-      // "out center 40;" caps how many elements Overpass computes
-      // and returns, instead of fetching everything then slicing
-      // client-side. This alone cuts response time a lot in dense cities.
-      const resultCap = 40;
+Destination:
+${destination}
 
-      let query = "";
+Provide useful and concise travel information.
 
-      // ---------------------------------------------
-      // PLACES TO VISIT
-      // ---------------------------------------------
+Use the following structure:
 
-      if (category === "places") {
-        query = `
-          [out:json][timeout:20];
-          (
-            node["tourism"~"attraction|museum|viewpoint|zoo|theme_park|gallery|artwork"](around:${radius},${lat},${lon});
-            way["tourism"~"attraction|museum|viewpoint|zoo|theme_park|gallery|artwork"](around:${radius},${lat},${lon});
-            relation["tourism"~"attraction|museum|viewpoint|zoo|theme_park|gallery|artwork"](around:${radius},${lat},${lon});
+📍 DESTINATION OVERVIEW
 
-            node["historic"](around:${radius},${lat},${lon});
-            way["historic"](around:${radius},${lat},${lon});
-            relation["historic"](around:${radius},${lat},${lon});
-          );
-          out center ${resultCap};
-        `;
-      }
+🏝️ POPULAR PLACES
+- Mention important tourist attractions.
 
-      // ---------------------------------------------
-      // THINGS TO DO
-      // ---------------------------------------------
+🎯 THINGS TO DO
+- Mention interesting activities.
 
-      if (category === "things") {
-        query = `
-          [out:json][timeout:20];
-          (
-            node["leisure"~"park|sports_centre|water_park|stadium|pitch"](around:${radius},${lat},${lon});
-            way["leisure"~"park|sports_centre|water_park|stadium|pitch"](around:${radius},${lat},${lon});
+🚕 LOCAL TRAVEL TIPS
+- Give practical transportation and travel suggestions.
 
-            node["sport"](around:${radius},${lat},${lon});
+🛡️ SAFETY PRECAUTIONS
+- Give important safety advice for tourists.
 
-            node["tourism"~"theme_park|attraction"](around:${radius},${lat},${lon});
-            way["tourism"~"theme_park|attraction"](around:${radius},${lat},${lon});
-          );
-          out center ${resultCap};
-        `;
-      }
+⚠️ AREAS OR SITUATIONS TO BE CAREFUL ABOUT
+- Mention common tourist safety concerns.
 
-      // ---------------------------------------------
-      // FOOD & MARKETS
-      // ---------------------------------------------
+🎒 EMERGENCY PREPARATION
+- Explain what tourists should keep ready.
 
-      if (category === "food") {
-        query = `
-          [out:json][timeout:20];
-          (
-            node["amenity"~"restaurant|cafe|fast_food|food_court|bar|pub"](around:${radius},${lat},${lon});
-            way["amenity"~"restaurant|cafe|fast_food|food_court|bar|pub"](around:${radius},${lat},${lon});
+Important instructions:
+- Keep the response simple and useful.
+- Do not invent emergency phone numbers.
+- Do not invent exact crime statistics.
+- Do not provide false information.
+- If information can vary by location, clearly say so.
+- Focus on practical tourist safety.
+`;
 
-            node["shop"~"supermarket|convenience|mall|department_store|marketplace"](around:${radius},${lat},${lon});
-            way["shop"~"supermarket|convenience|mall|department_store|marketplace"](around:${radius},${lat},${lon});
-          );
-          out center ${resultCap};
-        `;
-      }
-
-      // ---------------------------------------------
-      // PHOTO SPOTS
-      // ---------------------------------------------
-
-      if (category === "photo") {
-        query = `
-          [out:json][timeout:20];
-          (
-            node["tourism"="viewpoint"](around:${radius},${lat},${lon});
-            way["tourism"="viewpoint"](around:${radius},${lat},${lon});
-
-            node["natural"~"peak|waterfall|beach|cliff|cave"](around:${radius},${lat},${lon});
-            way["natural"~"peak|waterfall|beach|cliff|cave"](around:${radius},${lat},${lon});
-          );
-          out center ${resultCap};
-        `;
-      }
-
-      if (!query) {
-        return;
-      }
-
-      const encodedQuery =
-        encodeURIComponent(query);
-
-      // =================================================
-      // MULTIPLE OVERPASS SERVERS — RACED IN PARALLEL
-      // Timeout must be >= the query's own [timeout:20],
-      // otherwise the client aborts before the server even
-      // gets a chance to reply — this was causing every
-      // request to look like a failure. POST is also more
-      // reliable than GET for these longer queries.
-      // =================================================
-
-      const endpoints = [
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter",
-      ];
-
-      const attempt = async (
-        endpoint: string
-      ): Promise<any> => {
-        const response = await fetchWithTimeout(
-          endpoint,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/x-www-form-urlencoded",
-            },
-            body: `data=${encodedQuery}`,
-          },
-          20000 // matches/exceeds the query's own timeout:20
-        );
-
-        const text = await response.text();
-
-        if (!response.ok) {
-          throw new Error(
-            `${endpoint} returned ${response.status}: ${text.substring(0, 150)}`
-          );
-        }
-
-        if (text.trim().startsWith("<")) {
-          throw new Error(
-            `${endpoint} returned HTML: ${text.substring(0, 150)}`
-          );
-        }
-
-        return JSON.parse(text);
-      };
-
-      let data: any = null;
-
-      try {
-        // Promise.any resolves as soon as ONE endpoint succeeds,
-        // instead of waiting for each one in sequence.
-        data = await Promise.any(
-          endpoints.map((endpoint) =>
-            attempt(endpoint)
-          )
-        );
-      } catch (aggregateError) {
-        // Log EVERY individual failure reason so the real
-        // cause is visible instead of just "all failed".
-        if (
-          aggregateError instanceof AggregateError
-        ) {
-          aggregateError.errors.forEach(
-            (err: any, i: number) => {
-              console.log(
-                `Overpass endpoint ${i} failed:`,
-                err?.message || err
-              );
-            }
-          );
-        } else {
-          console.log(
-            "Overpass request error:",
-            aggregateError
-          );
-        }
-      }
-
-      // =================================================
-      // NO SERVER WORKED
-      // =================================================
-
-      if (!data) {
-        throw new Error(
-          "All Overpass servers failed"
-        );
-      }
-
-      // =================================================
-      // FORMAT RESULTS
-      // =================================================
-
-      if (
-        !data.elements ||
-        !Array.isArray(data.elements)
-      ) {
-        throw new Error(
-          "Invalid Overpass data"
-        );
-      }
-
-      const formattedPlaces: Place[] =
-        data.elements
-          .filter((item: any) => {
-            const name =
-              item.tags?.name;
-
-            return (
-              name &&
-              typeof name === "string" &&
-              name.trim().length > 0
-            );
-          })
-          .map((item: any) => {
-            const itemLat =
-              item.lat ??
-              item.center?.lat ??
-              lat;
-
-            const itemLon =
-              item.lon ??
-              item.center?.lon ??
-              lon;
-
-            return {
-              id: `${item.type}-${item.id}`,
-
-              name:
-                item.tags.name.trim(),
-
-              type:
-                item.tags.tourism ||
-                item.tags.amenity ||
-                item.tags.leisure ||
-                item.tags.shop ||
-                item.tags.sport ||
-                item.tags.natural ||
-                item.tags.historic ||
-                "Place",
-
-              lat: String(itemLat),
-
-              lon: String(itemLon),
-
-              address:
-                item.tags["addr:street"] ||
-                item.tags["addr:city"] ||
-                item.tags["addr:place"] ||
-                "",
-            };
-          });
-
-      // =================================================
-      // REMOVE DUPLICATE NAMES
-      // =================================================
-
-      const uniquePlaces =
-        formattedPlaces.filter(
-          (place, index, self) =>
-            index ===
-            self.findIndex(
-              (p) =>
-                p.name.toLowerCase() ===
-                place.name.toLowerCase()
-            )
-        );
-
-      const finalPlaces = uniquePlaces.slice(0, 30);
-
-      cacheRef.current[cacheKey] = finalPlaces;
-      setPlaces(finalPlaces);
-    } catch (error) {
-      console.log(
-        "Places error:",
-        error
-      );
-
-      Alert.alert(
-        "Places Error",
-        "Unable to load places right now. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
+    askGemini(prompt, "Destination Guide");
   };
 
-  // =====================================================
-  // CHANGE CATEGORY
-  // =====================================================
+  // ==================================================
+  // SITUATION BASED SAFETY
+  // ==================================================
 
-  const changeCategory = async (
-    category: string
-  ) => {
-    setSelectedCategory(category);
-
-    if (
-      latitude === null ||
-      longitude === null
-    ) {
+  const getSafetyAdvice = () => {
+    if (!situation.trim()) {
+      Alert.alert(
+        "Describe Your Situation",
+        "Please tell us what is happening."
+      );
       return;
     }
 
-    await fetchPlaces(
-      latitude,
-      longitude,
-      category
-    );
+    const prompt = `
+You are a safety assistant inside a Tourist Safety Enhancement System.
+
+A tourist has described the following situation:
+
+"${situation}"
+
+Provide calm, practical and immediate safety guidance.
+
+Use this structure:
+
+🚨 IMMEDIATE ACTIONS
+- What should the tourist do right now?
+
+❌ WHAT TO AVOID
+- What actions should the tourist avoid?
+
+📍 MOVE TO SAFETY
+- Suggest safe public places or trusted locations where appropriate.
+
+📞 GET HELP
+- Explain how the tourist can contact appropriate local emergency services or trusted emergency contacts.
+
+📱 INFORMATION TO SHARE
+- Explain what information the tourist should share with emergency contacts.
+
+🛡️ EXTRA SAFETY TIP
+- Give one or two additional practical suggestions.
+
+Important instructions:
+- Stay calm and practical.
+- Do not make medical or legal diagnoses.
+- Do not invent emergency phone numbers.
+- Do not assume the exact location of the tourist.
+- If the situation appears immediately dangerous, clearly advise the tourist to contact local emergency services or their saved emergency contacts.
+`;
+
+    askGemini(prompt, "Safety Advice");
   };
 
-  // =====================================================
-  // GOOGLE MAP DIRECTIONS
-  // =====================================================
+  // ==================================================
+  // AI ITINERARY GENERATOR
+  // ==================================================
 
-  const openDirections = async (
-    place: Place
-  ) => {
-    const url =
-      `https://www.google.com/maps/dir/?api=1` +
-      `&destination=${place.lat},${place.lon}`;
-
-    try {
-      const supported =
-        await Linking.canOpenURL(url);
-
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert(
-          "Maps Error",
-          "Unable to open Google Maps."
-        );
-      }
-    } catch {
+  const generateItinerary = () => {
+    if (!destination.trim()) {
       Alert.alert(
-        "Error",
-        "Unable to open Google Maps."
+        "Enter Destination",
+        "Please enter a destination."
       );
+      return;
     }
+
+    if (!days.trim()) {
+      Alert.alert(
+        "Enter Days",
+        "Please enter number of days."
+      );
+      return;
+    }
+
+    const prompt = `
+You are an AI travel itinerary assistant for a Tourist Safety Enhancement System.
+
+Create a practical and safe tourist itinerary.
+
+Destination:
+${destination}
+
+Number of days:
+${days}
+
+Budget:
+${budget || "Not specified"}
+
+Interests:
+${interest || "General sightseeing"}
+
+Create a day-by-day itinerary.
+
+For every day include:
+
+DAY [NUMBER]
+
+🌅 Morning
+- Suggested activities
+
+☀️ Afternoon
+- Suggested activities
+
+🌆 Evening
+- Suggested activities
+
+🛡️ Safety Tip
+- One practical safety tip for that day.
+
+After the itinerary also include:
+
+💰 TRAVEL STYLE
+- Budget / Moderate / Premium based on the information provided.
+
+🎒 THINGS TO CARRY
+- Useful items for the trip.
+
+🛡️ GENERAL SAFETY PRECAUTIONS
+- Important tourist safety advice.
+
+Important instructions:
+- Do not invent exact ticket prices.
+- Do not invent emergency phone numbers.
+- Keep the itinerary realistic.
+- Avoid overly packed schedules.
+- Consider reasonable travel time.
+- Keep the response easy to read.
+`;
+
+    askGemini(prompt, "AI Itinerary");
   };
 
-  // =====================================================
-  // PLACE DETAILS
-  // =====================================================
-
-  const openPlace = (
-    place: Place
-  ) => {
-    Alert.alert(
-      place.name,
-      `${place.type}\n\n${
-        place.address ||
-        "Location available"
-      }`,
-      [
-        {
-          text: "Get Directions",
-          onPress: () =>
-            openDirections(place),
-        },
-        {
-          text: "Close",
-          style: "cancel",
-        },
-      ]
-    );
-  };
-
-  // =====================================================
+  // ==================================================
   // UI
-  // =====================================================
+  // ==================================================
 
   return (
-    <SafeAreaView
+    <ScrollView
       style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={
-          false
-        }
-        contentContainerStyle={
-          styles.content
-        }
-      >
-        {/* HEADER */}
+      {/* HEADER */}
 
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.brand}>
-              SAFE TOURISM
-            </Text>
+      <View style={styles.header}>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.heading}>
+            Explore
+          </Text>
 
-            <Text style={styles.title}>
-              Explore
-            </Text>
+          <Text style={styles.subtitle}>
+            Discover places. Plan smarter. Travel safer.
+          </Text>
+        </View>
 
-            <Text style={styles.subtitle}>
-              Discover what's around your
-              destination
-            </Text>
-          </View>
+        <View style={styles.headerIcon}>
+          <Ionicons
+            name="sparkles"
+            size={25}
+            color="#00D4FF"
+          />
+        </View>
+      </View>
 
-          <View style={styles.compass}>
+      {/* DESTINATION EXPLORER */}
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.iconBox}>
             <Ionicons
-              name="compass-outline"
-              size={29}
+              name="location"
+              size={22}
               color="#00D4FF"
             />
           </View>
+
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>
+              Destination Explorer
+            </Text>
+
+            <Text style={styles.cardSubtitle}>
+              Discover places and travel safely
+            </Text>
+          </View>
         </View>
 
-        {/* SEARCH BOX */}
-
-        <View style={styles.searchBox}>
-          <Ionicons
-            name="search-outline"
-            size={21}
-            color="#7C879B"
-          />
-
-          <TextInput
-            value={location}
-            onChangeText={setLocation}
-            placeholder="Enter city or destination"
-            placeholderTextColor="#687286"
-            style={styles.input}
-            onSubmitEditing={
-              searchLocation
-            }
-            returnKeyType="search"
-          />
-
-          {location.length > 0 && (
-            <TouchableOpacity
-              onPress={() =>
-                setLocation("")
-              }
-            >
-              <Ionicons
-                name="close-circle"
-                size={20}
-                color="#687286"
-              />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* SEARCH BUTTON */}
+        <TextInput
+          value={destination}
+          onChangeText={setDestination}
+          placeholder="e.g. Manali, Goa, Jaipur"
+          placeholderTextColor="#777B8F"
+          style={styles.input}
+        />
 
         <TouchableOpacity
-          style={styles.searchButton}
-          onPress={searchLocation}
+          style={[
+            styles.primaryButton,
+            loading && styles.disabledButton,
+          ]}
+          onPress={exploreDestination}
           disabled={loading}
-          activeOpacity={0.85}
+          activeOpacity={0.8}
         >
-          {loading ? (
-            <ActivityIndicator
-              color="#FFFFFF"
-            />
-          ) : (
-            <>
-              <Ionicons
-                name="search"
-                size={18}
-                color="#FFFFFF"
-              />
+          <Ionicons
+            name="search"
+            size={19}
+            color="#FFFFFF"
+          />
 
-              <Text
-                style={
-                  styles.searchButtonText
-                }
-              >
-                Explore Destination
-              </Text>
-            </>
-          )}
+          <Text style={styles.buttonText}>
+            Explore Destination
+          </Text>
         </TouchableOpacity>
+      </View>
 
-        {/* LOCATION RESULT */}
+      {/* SITUATION BASED SAFETY */}
 
-        {searched && (
-          <View
-            style={styles.locationCard}
-          >
-            <View
-              style={styles.locationIcon}
-            >
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.iconBox}>
+            <Ionicons
+              name="shield-checkmark"
+              size={22}
+              color="#00D4FF"
+            />
+          </View>
+
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>
+              Situation-Based Safety
+            </Text>
+
+            <Text style={styles.cardSubtitle}>
+              Tell us what's happening
+            </Text>
+          </View>
+        </View>
+
+        <TextInput
+          value={situation}
+          onChangeText={setSituation}
+          placeholder="Example: I am lost in an unfamiliar area..."
+          placeholderTextColor="#777B8F"
+          style={[
+            styles.input,
+            styles.textArea,
+          ]}
+          multiline
+          textAlignVertical="top"
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            loading && styles.disabledButton,
+          ]}
+          onPress={getSafetyAdvice}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="shield"
+            size={19}
+            color="#FFFFFF"
+          />
+
+          <Text style={styles.buttonText}>
+            Get Safety Advice
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* AI ITINERARY */}
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.iconBox}>
+            <Ionicons
+              name="map"
+              size={22}
+              color="#00D4FF"
+            />
+          </View>
+
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>
+              AI Itinerary Generator
+            </Text>
+
+            <Text style={styles.cardSubtitle}>
+              Create your personalized trip
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.label}>
+          Destination
+        </Text>
+
+        <TextInput
+          value={destination}
+          onChangeText={setDestination}
+          placeholder="e.g. Kerala"
+          placeholderTextColor="#777B8F"
+          style={styles.input}
+        />
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>
+              Days
+            </Text>
+
+            <TextInput
+              value={days}
+              onChangeText={setDays}
+              keyboardType="numeric"
+              placeholder="3"
+              placeholderTextColor="#777B8F"
+              style={styles.input}
+            />
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>
+              Budget
+            </Text>
+
+            <TextInput
+              value={budget}
+              onChangeText={setBudget}
+              keyboardType="numeric"
+              placeholder="₹20000"
+              placeholderTextColor="#777B8F"
+              style={styles.input}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.label}>
+          Interests
+        </Text>
+
+        <TextInput
+          value={interest}
+          onChangeText={setInterest}
+          placeholder="Nature, beaches, adventure..."
+          placeholderTextColor="#777B8F"
+          style={styles.input}
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            loading && styles.disabledButton,
+          ]}
+          onPress={generateItinerary}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="sparkles"
+            size={19}
+            color="#FFFFFF"
+          />
+
+          <Text style={styles.buttonText}>
+            Generate Itinerary
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* LOADING */}
+
+      {loading && (
+        <View style={styles.loadingCard}>
+          <View style={styles.loadingIcon}>
+            <Ionicons
+              name="sparkles"
+              size={25}
+              color="#00D4FF"
+            />
+          </View>
+
+          <ActivityIndicator
+            size="large"
+            color="#00D4FF"
+            style={styles.loader}
+          />
+
+          <Text style={styles.loadingTitle}>
+            AI is thinking...
+          </Text>
+
+          <Text style={styles.loadingText}>
+            Preparing useful travel information for you.
+          </Text>
+        </View>
+      )}
+
+      {/* AI RESULT */}
+
+      {result && !loading && (
+        <View style={styles.resultCard}>
+          <View style={styles.resultHeader}>
+            <View style={styles.resultIcon}>
               <Ionicons
-                name="location"
-                size={21}
+                name="sparkles"
+                size={20}
                 color="#00D4FF"
               />
             </View>
 
-            <View
-              style={styles.locationInfo}
-            >
-              <Text
-                style={styles.locationLabel}
-              >
-                EXPLORING
+            <View style={styles.resultTitleContainer}>
+              <Text style={styles.resultTitle}>
+                {result.title}
               </Text>
 
-              <Text
-                style={styles.locationName}
-                numberOfLines={2}
-              >
-                {searchedLocation}
-              </Text>
-
-              <Text
-                style={styles.locationSub}
-              >
-                Real places found around
-                this location
+              <Text style={styles.resultSubtitle}>
+                AI Travel Assistant
               </Text>
             </View>
           </View>
-        )}
 
-        {/* CATEGORIES */}
+          <View style={styles.resultDivider} />
 
-        {searched && (
-          <>
-            <View
-              style={styles.sectionHeader}
-            >
-              <Text
-                style={styles.sectionTitle}
-              >
-                What do you want to explore?
-              </Text>
-
-              <Text
-                style={styles.sectionSub}
-              >
-                Select a category
-              </Text>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={
-                false
-              }
-              contentContainerStyle={
-                styles.categoryScroll
-              }
-            >
-              {categories.map(
-                (category) => {
-                  const active =
-                    selectedCategory ===
-                    category.id;
-
-                  return (
-                    <TouchableOpacity
-                      key={category.id}
-                      style={[
-                        styles.category,
-                        active &&
-                          styles.activeCategory,
-                      ]}
-                      onPress={() =>
-                        changeCategory(
-                          category.id
-                        )
-                      }
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name={
-                          category.icon
-                        }
-                        size={21}
-                        color={
-                          active
-                            ? "#FFFFFF"
-                            : "#00D4FF"
-                        }
-                      />
-
-                      <Text
-                        style={[
-                          styles.categoryText,
-                          active &&
-                            styles.activeCategoryText,
-                        ]}
-                      >
-                        {
-                          category.title
-                        }
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-              )}
-            </ScrollView>
-
-            {/* RESULTS HEADER */}
-
-            <View
-              style={styles.resultsHeader}
-            >
-              <View>
-                <Text
-                  style={styles.resultsTitle}
-                >
-                  {
-                    categories.find(
-                      (c) =>
-                        c.id ===
-                        selectedCategory
-                    )?.title
-                  }
-                </Text>
-
-                <Text
-                  style={styles.resultsSub}
-                >
-                  Real places near{" "}
-                  {searchedLocation}
-                </Text>
-              </View>
-
-              {places.length > 0 && (
-                <View
-                  style={styles.countBadge}
-                >
-                  <Text
-                    style={styles.countText}
-                  >
-                    {places.length}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* LOADING */}
-
-            {loading && (
-              <View
-                style={styles.loadingBox}
-              >
-                <ActivityIndicator
-                  size="large"
-                  color="#00D4FF"
-                />
-
-                <Text
-                  style={styles.loadingText}
-                >
-                  Finding places nearby...
-                </Text>
-              </View>
-            )}
-
-            {/* RESULTS */}
-
-            {!loading &&
-              places.map((place) => (
-                <TouchableOpacity
-                  key={place.id}
-                  style={styles.placeCard}
-                  onPress={() =>
-                    openPlace(place)
-                  }
-                  activeOpacity={0.85}
-                >
-                  <View
-                    style={styles.placeIcon}
-                  >
-                    <Ionicons
-                      name={
-                        selectedCategory ===
-                        "food"
-                          ? "restaurant-outline"
-                          : selectedCategory ===
-                            "photo"
-                          ? "camera-outline"
-                          : selectedCategory ===
-                            "things"
-                          ? "sparkles-outline"
-                          : "location-outline"
-                      }
-                      size={25}
-                      color="#00D4FF"
-                    />
-                  </View>
-
-                  <View
-                    style={styles.placeInfo}
-                  >
-                    <Text
-                      style={
-                        styles.placeName
-                      }
-                      numberOfLines={2}
-                    >
-                      {place.name}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.placeType
-                      }
-                      numberOfLines={1}
-                    >
-                      {place.type}
-                    </Text>
-
-                    {place.address ? (
-                      <Text
-                        style={
-                          styles.placeAddress
-                        }
-                        numberOfLines={1}
-                      >
-                        {place.address}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  <TouchableOpacity
-                    style={
-                      styles.directionButton
-                    }
-                    onPress={() =>
-                      openDirections(
-                        place
-                      )
-                    }
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="navigate-outline"
-                      size={19}
-                      color="#FFFFFF"
-                    />
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-
-            {/* NO RESULTS */}
-
-            {!loading &&
-              places.length === 0 && (
-                <View
-                  style={styles.empty}
-                >
-                  <View
-                    style={
-                      styles.emptyIcon
-                    }
-                  >
-                    <Ionicons
-                      name="search-outline"
-                      size={35}
-                      color="#00D4FF"
-                    />
-                  </View>
-
-                  <Text
-                    style={
-                      styles.emptyTitle
-                    }
-                  >
-                    No places found
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.emptyText
-                    }
-                  >
-                    Try another category
-                    or search a nearby
-                    city.
-                  </Text>
-                </View>
-              )}
-          </>
-        )}
-
-        {/* INITIAL STATE */}
-
-        {!searched &&
-          !loading && (
-            <View
-              style={styles.initial}
-            >
-              <View
-                style={
-                  styles.initialIcon
-                }
-              >
-                <Ionicons
-                  name="earth-outline"
-                  size={48}
-                  color="#00D4FF"
-                />
-              </View>
-
-              <Text
-                style={
-                  styles.initialTitle
-                }
-              >
-                Start Exploring
-              </Text>
-
-              <Text
-                style={
-                  styles.initialText
-                }
-              >
-                Enter a destination above
-                and discover real tourist
-                places, activities, food,
-                markets and photo spots
-                around it.
-              </Text>
-
-              <View
-                style={
-                  styles.initialFeatures
-                }
-              >
-                <Feature
-                  icon="map-outline"
-                  text="Places to Visit"
-                />
-
-                <Feature
-                  icon="sparkles-outline"
-                  text="Things to Do"
-                />
-
-                <Feature
-                  icon="restaurant-outline"
-                  text="Food & Markets"
-                />
-
-                <Feature
-                  icon="camera-outline"
-                  text="Photo Spots"
-                />
-              </View>
-            </View>
-          )}
-
-        {/* ATTRIBUTION */}
-
-        {searched && (
-          <Text
-            style={styles.attribution}
-          >
-            Place information powered by
-            OpenStreetMap
+          <Text style={styles.resultText}>
+            {result.content}
           </Text>
-        )}
+        </View>
+      )}
 
-        <View
-          style={{ height: 30 }}
+      {/* INFORMATION */}
+
+      <View style={styles.noteCard}>
+        <Ionicons
+          name="information-circle"
+          size={21}
+          color="#00D4FF"
         />
-      </ScrollView>
-    </SafeAreaView>
+
+        <Text style={styles.noteText}>
+          AI suggestions are for travel assistance
+          only. For emergencies, use the SOS feature
+          and contact appropriate local emergency
+          services.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
-// =====================================================
-// FEATURE COMPONENT
-// =====================================================
-
-function Feature({
-  icon,
-  text,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  text: string;
-}) {
-  return (
-    <View style={styles.feature}>
-      <Ionicons
-        name={icon}
-        size={18}
-        color="#00D4FF"
-      />
-
-      <Text
-        style={styles.featureText}
-      >
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-// =====================================================
+// ======================================================
 // STYLES
-// =====================================================
+// ======================================================
 
 const styles = StyleSheet.create({
   container: {
@@ -1148,373 +633,245 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    padding: 20,
+    padding: 18,
     paddingBottom: 40,
   },
 
   header: {
     flexDirection: "row",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 22,
   },
 
-  brand: {
-    color: "#6C63FF",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 2,
+  headerTextContainer: {
+    flex: 1,
   },
 
-  title: {
+  heading: {
     color: "#FFFFFF",
-    fontSize: 31,
+    fontSize: 30,
     fontWeight: "800",
-    marginTop: 4,
   },
 
   subtitle: {
-    color: "#7F899C",
+    color: "#8E93A7",
+    fontSize: 13,
+    marginTop: 5,
+  },
+
+  headerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#11182B",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#1D2942",
+    marginLeft: 12,
+  },
+
+  card: {
+    backgroundColor: "#0D1426",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#1B2740",
+  },
+
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+
+  cardHeaderText: {
+    flex: 1,
+  },
+
+  iconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#101F35",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+
+  cardTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  cardSubtitle: {
+    color: "#7F869A",
     fontSize: 12,
     marginTop: 4,
   },
 
-  compass: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: "#10182A",
-    borderWidth: 1,
-    borderColor: "#222D45",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  searchBox: {
-    height: 56,
-    borderRadius: 17,
-    backgroundColor: "#10182A",
-    borderWidth: 1,
-    borderColor: "#263149",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
-  },
-
   input: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontSize: 14,
-    marginLeft: 10,
-  },
-
-  searchButton: {
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: "#6C63FF",
-    marginTop: 11,
-    justifyContent: "center",
-    alignItems: "center",
-    flexDirection: "row",
-  },
-
-  searchButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-    marginLeft: 8,
-  },
-
-  locationCard: {
-    marginTop: 17,
-    backgroundColor: "#0E202B",
-    borderRadius: 18,
+    backgroundColor: "#080D1B",
     borderWidth: 1,
-    borderColor: "#193D4C",
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  locationIcon: {
-    width: 45,
-    height: 45,
+    borderColor: "#202C45",
     borderRadius: 14,
-    backgroundColor: "#102D3A",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  locationInfo: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
-  locationLabel: {
-    color: "#00D4FF",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-
-  locationName: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-    marginTop: 3,
-  },
-
-  locationSub: {
-    color: "#748094",
-    fontSize: 10,
-    marginTop: 3,
-  },
-
-  sectionHeader: {
-    marginTop: 26,
-    marginBottom: 13,
-  },
-
-  sectionTitle: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  sectionSub: {
-    color: "#737D91",
-    fontSize: 11,
-    marginTop: 3,
-  },
-
-  categoryScroll: {
-    paddingBottom: 5,
-  },
-
-  category: {
-    height: 48,
     paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: "#10182A",
-    borderWidth: 1,
-    borderColor: "#222D45",
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 9,
-  },
-
-  activeCategory: {
-    backgroundColor: "#6C63FF",
-    borderColor: "#6C63FF",
-  },
-
-  categoryText: {
-    color: "#C4CAD5",
-    fontSize: 11,
-    fontWeight: "700",
-    marginLeft: 7,
-  },
-
-  activeCategoryText: {
+    height: 50,
     color: "#FFFFFF",
+    fontSize: 14,
+    marginBottom: 12,
   },
 
-  resultsHeader: {
-    marginTop: 25,
-    marginBottom: 13,
+  textArea: {
+    height: 110,
+    paddingTop: 14,
+  },
+
+  primaryButton: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: "#6C63FF",
     flexDirection: "row",
-    justifyContent:
-      "space-between",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 4,
+  },
+
+  disabledButton: {
+    opacity: 0.55,
+  },
+
+  buttonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  label: {
+    color: "#AEB4C7",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 7,
+  },
+
+  row: {
+    flexDirection: "row",
+    gap: 12,
+  },
+
+  halfInput: {
+    flex: 1,
+  },
+
+  loadingCard: {
+    backgroundColor: "#0D1426",
+    borderRadius: 20,
+    padding: 25,
+    alignItems: "center",
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#1B2740",
+  },
+
+  loadingIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: "#101F35",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  loader: {
+    marginTop: 4,
+  },
+
+  loadingTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 12,
+  },
+
+  loadingText: {
+    color: "#7F869A",
+    marginTop: 6,
+    fontSize: 12,
+    textAlign: "center",
+  },
+
+  resultCard: {
+    backgroundColor: "#0D1426",
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#27365A",
+  },
+
+  resultHeader: {
+    flexDirection: "row",
     alignItems: "center",
   },
 
-  resultsTitle: {
+  resultIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: "#101F35",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 11,
+  },
+
+  resultTitleContainer: {
+    flex: 1,
+  },
+
+  resultTitle: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
   },
 
-  resultsSub: {
-    color: "#737D91",
-    fontSize: 10,
-    marginTop: 3,
-  },
-
-  countBadge: {
-    minWidth: 31,
-    height: 31,
-    paddingHorizontal: 8,
-    borderRadius: 11,
-    backgroundColor: "#102D3A",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  countText: {
-    color: "#00D4FF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-
-  placeCard: {
-    backgroundColor: "#10182A",
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#202A42",
-    padding: 12,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  placeIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 15,
-    backgroundColor: "#102A38",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  placeInfo: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
-  },
-
-  placeName: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  placeType: {
-    color: "#00D4FF",
-    fontSize: 10,
-    fontWeight: "700",
-    marginTop: 4,
-    textTransform: "capitalize",
-  },
-
-  placeAddress: {
-    color: "#6F798D",
-    fontSize: 10,
-    marginTop: 3,
-  },
-
-  directionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    backgroundColor: "#6C63FF",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  loadingBox: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-  },
-
-  loadingText: {
-    color: "#7C879A",
-    fontSize: 12,
-    marginTop: 12,
-  },
-
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 55,
-  },
-
-  emptyIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 23,
-    backgroundColor: "#102A38",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  emptyTitle: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "800",
-    marginTop: 14,
-  },
-
-  emptyText: {
-    color: "#707A8E",
+  resultSubtitle: {
+    color: "#737B91",
     fontSize: 11,
-    textAlign: "center",
-    marginTop: 5,
-    maxWidth: 280,
+    marginTop: 3,
+  },
+
+  resultDivider: {
+    height: 1,
+    backgroundColor: "#1B2740",
+    marginVertical: 15,
+  },
+
+  resultText: {
+    color: "#D4D8E5",
+    fontSize: 14,
+    lineHeight: 23,
+  },
+
+  noteCard: {
+    flexDirection: "row",
+    backgroundColor: "#0B1222",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#1A2945",
+    gap: 10,
+  },
+
+  noteText: {
+    flex: 1,
+    color: "#8E96AA",
+    fontSize: 11,
     lineHeight: 17,
   },
-
-  initial: {
-    alignItems: "center",
-    paddingTop: 65,
-    paddingBottom: 20,
-  },
-
-  initialIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 35,
-    backgroundColor: "#102633",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1C3D4B",
-  },
-
-  initialTitle: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 20,
-  },
-
-  initialText: {
-    color: "#737D91",
-    fontSize: 12,
-    lineHeight: 19,
-    textAlign: "center",
-    marginTop: 8,
-    maxWidth: 310,
-  },
-
-  initialFeatures: {
-    width: "100%",
-    marginTop: 25,
-  },
-
-  feature: {
-    backgroundColor: "#10182A",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#202A42",
-    padding: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-
-  featureText: {
-    color: "#D3D7E0",
-    fontSize: 12,
-    fontWeight: "700",
-    marginLeft: 10,
-  },
-
-  attribution: {
-    color: "#4F596C",
-    fontSize: 9,
-    textAlign: "center",
-    marginTop: 22,
-  },
 });
+
