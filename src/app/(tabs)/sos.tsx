@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -20,6 +19,40 @@ import { Ionicons } from "@expo/vector-icons";
 
 const SOS_CONTACTS_KEY = "sosEmergencyContacts";
 
+type EmergencyType = {
+  id: string;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
+const EMERGENCY_TYPES: EmergencyType[] = [
+  {
+    id: "vehicle",
+    title: "Car or Vehicle Issue",
+    icon: "car",
+  },
+  {
+    id: "sickness",
+    title: "Sickness or Injury",
+    icon: "medkit",
+  },
+  {
+    id: "crime",
+    title: "Crime",
+    icon: "shield",
+  },
+  {
+    id: "lost",
+    title: "Lost or Trapped",
+    icon: "location",
+  },
+  {
+    id: "fire",
+    title: "Fire",
+    icon: "flame",
+  },
+];
+
 export default function SOSScreen() {
   const [contact1, setContact1] = useState("");
   const [contact2, setContact2] = useState("");
@@ -30,13 +63,22 @@ export default function SOSScreen() {
   const [loading, setLoading] = useState(true);
   const [holding, setHolding] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [showConfirmation, setShowConfirmation] = useState(false);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showWhoNeedsHelp, setShowWhoNeedsHelp] =
+    useState(false);
 
-  // -----------------------------
-  // LOAD EMERGENCY CONTACTS
-  // -----------------------------
+  const [showConfirmation, setShowConfirmation] =
+    useState(false);
+
+  const [selectedEmergency, setSelectedEmergency] =
+    useState<EmergencyType | null>(null);
+
+  const [whoNeedsHelp, setWhoNeedsHelp] =
+    useState<string>("");
+
+  const intervalRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     loadContacts();
     getLocation();
@@ -48,9 +90,13 @@ export default function SOSScreen() {
     };
   }, []);
 
+  // -----------------------------
+  // LOAD EMERGENCY CONTACTS
+  // -----------------------------
   const loadContacts = async () => {
     try {
-      const saved = await AsyncStorage.getItem(SOS_CONTACTS_KEY);
+      const saved =
+        await AsyncStorage.getItem(SOS_CONTACTS_KEY);
 
       if (saved) {
         const data = JSON.parse(saved);
@@ -103,7 +149,7 @@ Longitude: ${location.coords.longitude.toFixed(6)}`;
   };
 
   // -----------------------------
-  // START HOLD
+  // START 3 SECOND HOLD
   // -----------------------------
   const handlePressIn = () => {
     if (!contact1 && !contact2) {
@@ -134,13 +180,16 @@ Longitude: ${location.coords.longitude.toFixed(6)}`;
 
         Vibration.vibrate(500);
 
+        // Direct SOS
+        setSelectedEmergency(null);
+        setWhoNeedsHelp("Me");
         setShowConfirmation(true);
       }
     }, 300);
   };
 
   // -----------------------------
-  // RELEASE BUTTON
+  // RELEASE SOS BUTTON
   // -----------------------------
   const handlePressOut = () => {
     if (intervalRef.current) {
@@ -154,6 +203,32 @@ Longitude: ${location.coords.longitude.toFixed(6)}`;
   };
 
   // -----------------------------
+  // SELECT EMERGENCY TYPE
+  // -----------------------------
+  const selectEmergency = (emergency: EmergencyType) => {
+    if (!contact1 && !contact2) {
+      Alert.alert(
+        "Emergency Contacts Required",
+        "Please save at least one emergency contact from Settings first."
+      );
+      return;
+    }
+
+    setSelectedEmergency(emergency);
+    setWhoNeedsHelp("");
+    setShowWhoNeedsHelp(true);
+  };
+
+  // -----------------------------
+  // SELECT WHO NEEDS HELP
+  // -----------------------------
+  const selectWhoNeedsHelp = (person: string) => {
+    setWhoNeedsHelp(person);
+    setShowWhoNeedsHelp(false);
+    setShowConfirmation(true);
+  };
+
+  // -----------------------------
   // SEND SOS
   // -----------------------------
   const sendSOS = async () => {
@@ -163,7 +238,14 @@ Longitude: ${location.coords.longitude.toFixed(6)}`;
 
     const recipients = [contact1, contact2].filter(Boolean);
 
+    const emergencyName =
+      selectedEmergency?.title || "General Emergency";
+
     const message = `🚨 EMERGENCY SOS ALERT 🚨
+
+Emergency Type: ${emergencyName}
+
+Who needs help: ${whoNeedsHelp || "Me"}
 
 I need immediate help.
 
@@ -183,7 +265,8 @@ Please contact me immediately.
           text: "SEND SMS",
           onPress: async () => {
             try {
-              const available = await SMS.isAvailableAsync();
+              const available =
+                await SMS.isAvailableAsync();
 
               if (!available) {
                 Alert.alert(
@@ -193,7 +276,10 @@ Please contact me immediately.
                 return;
               }
 
-              await SMS.sendSMSAsync(recipients, message);
+              await SMS.sendSMSAsync(
+                recipients,
+                message
+              );
             } catch (error) {
               Alert.alert(
                 "SMS Error",
@@ -217,6 +303,185 @@ Please contact me immediately.
   };
 
   // -----------------------------
+  // WHO NEEDS HELP SCREEN
+  // -----------------------------
+  if (showWhoNeedsHelp) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={styles.confirmScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              setShowWhoNeedsHelp(false);
+              setSelectedEmergency(null);
+            }}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={23}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+
+          <View style={styles.header}>
+            <View style={styles.headerIcon}>
+              <Ionicons
+                name="warning"
+                size={25}
+                color="#FF5368"
+              />
+            </View>
+
+            <View>
+              <Text style={styles.headerTitle}>
+                Emergency Details
+              </Text>
+
+              <Text style={styles.headerSubtitle}>
+                Tell us who needs help
+              </Text>
+            </View>
+          </View>
+
+          {/* SELECTED EMERGENCY */}
+          <View style={styles.selectedEmergencyCard}>
+            <View style={styles.selectedEmergencyIcon}>
+              <Ionicons
+                name={
+                  selectedEmergency?.icon || "warning"
+                }
+                size={25}
+                color="#FF5368"
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.smallLabel}>
+                EMERGENCY TYPE
+              </Text>
+
+              <Text style={styles.selectedEmergencyTitle}>
+                {selectedEmergency?.title}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.questionTitle}>
+            Who needs help?
+          </Text>
+
+          <Text style={styles.questionSubtitle}>
+            Select the person or people who need emergency
+            assistance.
+          </Text>
+
+          {/* ME */}
+          <TouchableOpacity
+            style={styles.personOption}
+            activeOpacity={0.8}
+            onPress={() =>
+              selectWhoNeedsHelp("Me")
+            }
+          >
+            <View style={styles.optionIcon}>
+              <Ionicons
+                name="person"
+                size={25}
+                color="#00D4FF"
+              />
+            </View>
+
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>
+                Me
+              </Text>
+
+              <Text style={styles.optionSubtitle}>
+                I need emergency assistance
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={21}
+              color="#71839F"
+            />
+          </TouchableOpacity>
+
+          {/* SOMEONE ELSE */}
+          <TouchableOpacity
+            style={styles.personOption}
+            activeOpacity={0.8}
+            onPress={() =>
+              selectWhoNeedsHelp("Someone Else")
+            }
+          >
+            <View style={styles.optionIcon}>
+              <Ionicons
+                name="person-add"
+                size={25}
+                color="#00D4FF"
+              />
+            </View>
+
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>
+                Someone Else
+              </Text>
+
+              <Text style={styles.optionSubtitle}>
+                Another person needs help
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={21}
+              color="#71839F"
+            />
+          </TouchableOpacity>
+
+          {/* MULTIPLE PEOPLE */}
+          <TouchableOpacity
+            style={styles.personOption}
+            activeOpacity={0.8}
+            onPress={() =>
+              selectWhoNeedsHelp("Multiple People")
+            }
+          >
+            <View style={styles.optionIcon}>
+              <Ionicons
+                name="people"
+                size={25}
+                color="#00D4FF"
+              />
+            </View>
+
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>
+                Multiple People
+              </Text>
+
+              <Text style={styles.optionSubtitle}>
+                More than one person needs help
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={21}
+              color="#71839F"
+            />
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // -----------------------------
   // CONFIRMATION SCREEN
   // -----------------------------
   if (showConfirmation) {
@@ -226,7 +491,6 @@ Please contact me immediately.
           contentContainerStyle={styles.confirmScroll}
           showsVerticalScrollIndicator={false}
         >
-          {/* HEADER */}
           <View style={styles.header}>
             <View style={styles.headerIcon}>
               <Ionicons
@@ -247,7 +511,6 @@ Please contact me immediately.
             </View>
           </View>
 
-          {/* CONFIRM CARD */}
           <View style={styles.confirmCard}>
             <View style={styles.confirmIconCircle}>
               <Ionicons
@@ -263,8 +526,53 @@ Please contact me immediately.
 
             <Text style={styles.confirmDescription}>
               Your emergency contacts will receive your
-              current location and SOS message.
+              emergency details and current location.
             </Text>
+
+            {/* EMERGENCY TYPE */}
+            <View style={styles.summaryBox}>
+              <View style={styles.summaryRow}>
+                <Ionicons
+                  name={
+                    selectedEmergency?.icon ||
+                    "warning"
+                  }
+                  size={21}
+                  color="#FF5368"
+                />
+
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoLabel}>
+                    Emergency Type
+                  </Text>
+
+                  <Text style={styles.infoValue}>
+                    {selectedEmergency?.title ||
+                      "General Emergency"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.summaryRow}>
+                <Ionicons
+                  name="people"
+                  size={21}
+                  color="#00D4FF"
+                />
+
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoLabel}>
+                    Who Needs Help
+                  </Text>
+
+                  <Text style={styles.infoValue}>
+                    {whoNeedsHelp || "Me"}
+                  </Text>
+                </View>
+              </View>
+            </View>
 
             {/* CONTACTS */}
             <View style={styles.infoBox}>
@@ -324,13 +632,15 @@ Please contact me immediately.
                   {location
                     ? `${location.coords.latitude.toFixed(
                         5
-                      )}, ${location.coords.longitude.toFixed(5)}`
+                      )}, ${location.coords.longitude.toFixed(
+                        5
+                      )}`
                     : "Location unavailable"}
                 </Text>
               </View>
             </View>
 
-            {/* ACTION BUTTON */}
+            {/* SEND */}
             <TouchableOpacity
               style={styles.sendButton}
               activeOpacity={0.85}
@@ -347,10 +657,13 @@ Please contact me immediately.
               </Text>
             </TouchableOpacity>
 
-            {/* CANCEL */}
             <TouchableOpacity
               style={styles.cancelButton}
-              onPress={() => setShowConfirmation(false)}
+              onPress={() => {
+                setShowConfirmation(false);
+                setSelectedEmergency(null);
+                setWhoNeedsHelp("");
+              }}
             >
               <Text style={styles.cancelText}>
                 Cancel
@@ -451,6 +764,61 @@ Please contact me immediately.
               ? "Keep holding..."
               : "Hold for 3 seconds"}
           </Text>
+        </View>
+
+        {/* DIVIDER */}
+        <View style={styles.orContainer}>
+          <View style={styles.orLine} />
+
+          <Text style={styles.orText}>
+            OR
+          </Text>
+
+          <View style={styles.orLine} />
+        </View>
+
+        {/* EMERGENCY TYPE SECTION */}
+        <View style={styles.emergencySection}>
+          <Text style={styles.emergencySectionTitle}>
+            What's the emergency?
+          </Text>
+
+          <Text style={styles.emergencySectionSubtitle}>
+            Choose what is happening to get the right
+            emergency response.
+          </Text>
+
+          <View style={styles.emergencyGrid}>
+            {EMERGENCY_TYPES.map((emergency) => (
+              <TouchableOpacity
+                key={emergency.id}
+                style={styles.emergencyCard}
+                activeOpacity={0.8}
+                onPress={() =>
+                  selectEmergency(emergency)
+                }
+              >
+                <View style={styles.emergencyIcon}>
+                  <Ionicons
+                    name={emergency.icon}
+                    size={24}
+                    color="#00D4FF"
+                  />
+                </View>
+
+                <Text style={styles.emergencyTitle}>
+                  {emergency.title}
+                </Text>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={17}
+                  color="#71839F"
+                  style={styles.emergencyArrow}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* CONTACT STATUS */}
@@ -571,8 +939,9 @@ Please contact me immediately.
           />
 
           <Text style={styles.noticeText}>
-            Your emergency contacts and current location
-            will be shown before sending the SOS alert.
+            Hold SOS for 3 seconds for an immediate
+            emergency alert, or select the emergency
+            type below.
           </Text>
         </View>
 
@@ -663,7 +1032,7 @@ const styles = StyleSheet.create({
   sosSection: {
     alignItems: "center",
     paddingVertical: 10,
-    marginBottom: 28,
+    marginBottom: 22,
   },
 
   helpText: {
@@ -737,6 +1106,85 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 15,
     letterSpacing: 0.5,
+  },
+
+  orContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 22,
+  },
+
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#1A2A43",
+  },
+
+  orText: {
+    color: "#52657F",
+    fontSize: 11,
+    fontWeight: "800",
+    marginHorizontal: 12,
+  },
+
+  emergencySection: {
+    marginBottom: 20,
+  },
+
+  emergencySectionTitle: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    fontWeight: "800",
+    marginBottom: 5,
+  },
+
+  emergencySectionSubtitle: {
+    color: "#71839F",
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 15,
+  },
+
+  emergencyGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+
+  emergencyCard: {
+    width: "48.3%",
+    minHeight: 112,
+    backgroundColor: "#0D182A",
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: "#1A2A43",
+    padding: 13,
+    marginBottom: 12,
+    position: "relative",
+  },
+
+  emergencyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: "#102039",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+
+  emergencyTitle: {
+    color: "#DCE5F2",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    paddingRight: 15,
+  },
+
+  emergencyArrow: {
+    position: "absolute",
+    right: 11,
+    bottom: 12,
   },
 
   contactsCard: {
@@ -825,7 +1273,112 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  // CONFIRMATION PAGE
+  // -----------------------------
+  // WHO NEEDS HELP
+  // -----------------------------
+
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: "#101C32",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#1D3150",
+  },
+
+  selectedEmergencyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0D182A",
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "#1A2A43",
+    marginBottom: 28,
+  },
+
+  selectedEmergencyIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#301824",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 13,
+  },
+
+  smallLabel: {
+    color: "#71839F",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+
+  selectedEmergencyTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  questionTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+
+  questionSubtitle: {
+    color: "#71839F",
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+
+  personOption: {
+    minHeight: 82,
+    backgroundColor: "#0D182A",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#1A2A43",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  optionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: "#102039",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 13,
+  },
+
+  optionTextContainer: {
+    flex: 1,
+  },
+
+  optionTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  optionSubtitle: {
+    color: "#71839F",
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  // -----------------------------
+  // CONFIRMATION
+  // -----------------------------
 
   confirmCard: {
     backgroundColor: "#0D182A",
@@ -861,6 +1414,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
     marginBottom: 22,
+  },
+
+  summaryBox: {
+    backgroundColor: "#0A1322",
+    borderRadius: 15,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: "#18283F",
+    marginBottom: 13,
+  },
+
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
   },
 
   infoBox: {
@@ -954,4 +1522,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-
