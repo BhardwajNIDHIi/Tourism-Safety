@@ -278,7 +278,7 @@ export default function SOSScreen() {
 
   useEffect(() => {
     loadContacts();
-    loadLocation();
+    getLocation();
 
     return () => {
       if (intervalRef.current) {
@@ -287,9 +287,9 @@ export default function SOSScreen() {
     };
   }, []);
 
-  // =====================================================
+  // ----------------------------------------------------
   // LOAD CONTACTS
-  // =====================================================
+  // ----------------------------------------------------
 
   const loadContacts = async () => {
     try {
@@ -297,78 +297,79 @@ export default function SOSScreen() {
         SOS_CONTACTS_KEY
       );
 
-      if (!saved) {
-        return;
+      if (saved) {
+        const data = JSON.parse(saved);
+
+        setContact1(data.contact1 || "");
+        setContact2(data.contact2 || "");
       }
-
-      const data = JSON.parse(saved);
-
-      setContact1(data.contact1 || "");
-      setContact2(data.contact2 || "");
     } catch (error) {
       console.log("Contact loading error:", error);
     }
   };
 
-  // =====================================================
-  // LOAD LOCATION
-  // =====================================================
+  // ----------------------------------------------------
+  // GET CURRENT LOCATION
+  // ----------------------------------------------------
 
-  const loadLocation = async () => {
-    try {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
+  const getLocation =
+    async (): Promise<Location.LocationObject | null> => {
+      try {
+        const { status } =
+          await Location.requestForegroundPermissionsAsync();
 
-      if (status !== "granted") {
-        setLoading(false);
-        return;
-      }
+        if (status !== "granted") {
+          setLocation(null);
+          setLocationAddress("");
+          return null;
+        }
 
-      const currentLocation =
-        await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        const currentLocation =
+          await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
 
-      setLocation(currentLocation);
-      setLoading(false);
+        setLocation(currentLocation);
 
-      /*
-       * Address is loaded separately.
-       * It does NOT block the SOS button.
-       */
-      Location.reverseGeocodeAsync({
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-      })
-        .then((address) => {
-          if (address.length === 0) {
-            return;
+        try {
+          const address =
+            await Location.reverseGeocodeAsync({
+              latitude: currentLocation.coords.latitude,
+              longitude: currentLocation.coords.longitude,
+            });
+
+          if (address.length > 0) {
+            const place = address[0];
+
+            const parts = [
+              place.name,
+              place.street,
+              place.district,
+              place.city,
+              place.region,
+            ].filter(Boolean);
+
+            setLocationAddress(parts.join(", "));
           }
+        } catch (addressError) {
+          console.log(
+            "Address error:",
+            addressError
+          );
+        }
 
-          const place = address[0];
+        return currentLocation;
+      } catch (error) {
+        console.log("Location error:", error);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    };
 
-          const parts = [
-            place.name,
-            place.street,
-            place.district,
-            place.city,
-            place.region,
-          ].filter(Boolean);
-
-          setLocationAddress(parts.join(", "));
-        })
-        .catch((error) => {
-          console.log("Address error:", error);
-        });
-    } catch (error) {
-      console.log("Location error:", error);
-      setLoading(false);
-    }
-  };
-
-  // =====================================================
+  // ----------------------------------------------------
   // LOCATION TEXT
-  // =====================================================
+  // ----------------------------------------------------
 
   const getLocationText = (
     currentLocation: Location.LocationObject | null
@@ -377,15 +378,19 @@ export default function SOSScreen() {
       return "Location unavailable";
     }
 
-    return `Latitude: ${currentLocation.coords.latitude.toFixed(
-      6
-    )}
-Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
+    const latitude =
+      currentLocation.coords.latitude.toFixed(6);
+
+    const longitude =
+      currentLocation.coords.longitude.toFixed(6);
+
+    return `Latitude: ${latitude}
+Longitude: ${longitude}`;
   };
 
-  // =====================================================
-  // GOOGLE MAPS LINK
-  // =====================================================
+  // ----------------------------------------------------
+  // GOOGLE MAP LINK
+  // ----------------------------------------------------
 
   const getGoogleMapsLink = (
     currentLocation: Location.LocationObject | null
@@ -403,9 +408,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
   };
 
-  // =====================================================
+  // ----------------------------------------------------
   // CHECK CONTACTS
-  // =====================================================
+  // ----------------------------------------------------
 
   const checkContacts = () => {
     if (!contact1 && !contact2) {
@@ -420,9 +425,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     return true;
   };
 
-  // =====================================================
-  // START SOS HOLD
-  // =====================================================
+  // ----------------------------------------------------
+  // START 3 SECOND SOS
+  // ----------------------------------------------------
 
   const handlePressIn = () => {
     if (!checkContacts()) {
@@ -449,22 +454,20 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
 
         Vibration.vibrate(500);
 
+        // Immediate SOS
         setSelectedEmergency(null);
         setSelectedEmergencyDetail("Immediate SOS");
         setCustomDetails("");
         setWhoNeedsHelp("Me");
 
-        setShowEmergencyTypes(false);
-        setShowEmergencyDetails(false);
-        setShowWhoNeedsHelp(false);
         setShowConfirmation(true);
       }
     }, 300);
   };
 
-  // =====================================================
-  // RELEASE SOS
-  // =====================================================
+  // ----------------------------------------------------
+  // RELEASE SOS BUTTON
+  // ----------------------------------------------------
 
   const handlePressOut = () => {
     if (intervalRef.current) {
@@ -477,9 +480,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     }
   };
 
-  // =====================================================
-  // OPEN EMERGENCY TYPES
-  // =====================================================
+  // ----------------------------------------------------
+  // START CATEGORY FLOW
+  // ----------------------------------------------------
 
   const openEmergencyTypes = () => {
     if (!checkContacts()) {
@@ -492,9 +495,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     setShowConfirmation(false);
   };
 
-  // =====================================================
+  // ----------------------------------------------------
   // SELECT EMERGENCY TYPE
-  // =====================================================
+  // ----------------------------------------------------
 
   const selectEmergencyType = (
     type: EmergencyType
@@ -506,14 +509,13 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     setShowEmergencyTypes(false);
     setShowEmergencyDetails(true);
 
-    if (!location) {
-      loadLocation();
-    }
+    // Refresh location immediately
+    getLocation();
   };
 
-  // =====================================================
-  // SELECT DETAIL
-  // =====================================================
+  // ----------------------------------------------------
+  // SELECT EMERGENCY DETAIL
+  // ----------------------------------------------------
 
   const selectEmergencyDetail = (
     option: EmergencyOption
@@ -528,9 +530,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     setShowWhoNeedsHelp(true);
   };
 
-  // =====================================================
-  // CUSTOM DETAIL
-  // =====================================================
+  // ----------------------------------------------------
+  // CONTINUE OTHER DETAILS
+  // ----------------------------------------------------
 
   const continueCustomDetails = () => {
     if (!customDetails.trim()) {
@@ -538,7 +540,6 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
         "Details Required",
         "Please briefly describe what happened."
       );
-
       return;
     }
 
@@ -546,9 +547,9 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     setShowWhoNeedsHelp(true);
   };
 
-  // =====================================================
-  // WHO NEEDS HELP
-  // =====================================================
+  // ----------------------------------------------------
+  // SELECT WHO NEEDS HELP
+  // ----------------------------------------------------
 
   const selectWhoNeedsHelp = (
     value: WhoNeedsHelp
@@ -559,84 +560,103 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     setShowConfirmation(true);
   };
 
-  // =====================================================
-  // EMERGENCY NAME
-  // =====================================================
+  // ----------------------------------------------------
+  // GET EMERGENCY NAME
+  // ----------------------------------------------------
 
   const getEmergencyName = () => {
     if (!selectedEmergency) {
       return "Immediate SOS";
     }
 
-    const emergency =
-      EMERGENCY_TYPES.find(
-        (item) =>
-          item.id === selectedEmergency
-      );
+    const emergency = EMERGENCY_TYPES.find(
+      (item) => item.id === selectedEmergency
+    );
 
     return emergency?.title || "Emergency";
   };
 
-  // =====================================================
-  // FINAL DETAIL
-  // =====================================================
+  // ----------------------------------------------------
+  // GET FINAL DETAIL
+  // ----------------------------------------------------
 
   const getFinalDetail = () => {
-    if (!selectedEmergencyDetail) {
-      return "Immediate SOS";
+    if (selectedEmergencyDetail) {
+      if (
+        selectedEmergencyDetail.toLowerCase().includes("other")
+      ) {
+        return customDetails.trim() || selectedEmergencyDetail;
+      }
+
+      return selectedEmergencyDetail;
     }
 
-    if (
-      selectedEmergencyDetail
-        .toLowerCase()
-        .includes("other")
-    ) {
-      return (
-        customDetails.trim() ||
-        selectedEmergencyDetail
-      );
-    }
-
-    return selectedEmergencyDetail;
+    return "Immediate SOS";
   };
 
-  // =====================================================
+  // ----------------------------------------------------
   // CALL 112
-  // =====================================================
+  // ----------------------------------------------------
 
   const call112 = async () => {
     try {
+      const supported = await Linking.canOpenURL(
+        "tel:112"
+      );
+
+      if (!supported) {
+        Alert.alert(
+          "Unable to Call",
+          "Calling is not available on this device."
+        );
+        return;
+      }
+
       await Linking.openURL("tel:112");
     } catch (error) {
       Alert.alert(
-        "Unable to Call",
+        "Call Error",
         "Unable to open the emergency call."
       );
     }
   };
 
-  // =====================================================
-  // FIND POLICE
-  // =====================================================
+  // ----------------------------------------------------
+  // FIND NEARBY POLICE
+  // ----------------------------------------------------
 
   const findNearbyPolice = async () => {
     if (!location) {
-      Alert.alert(
-        "Location Unavailable",
-        "Current location is not available yet."
-      );
+      const currentLocation = await getLocation();
 
+      if (!currentLocation) {
+        Alert.alert(
+          "Location Unavailable",
+          "Please enable location permission first."
+        );
+        return;
+      }
+
+      const latitude =
+        currentLocation.coords.latitude;
+
+      const longitude =
+        currentLocation.coords.longitude;
+
+      const url =
+        `https://www.google.com/maps/search/?api=1&query=` +
+        `police+station+near+${latitude},${longitude}`;
+
+      Linking.openURL(url);
       return;
     }
 
-    const latitude =
-      location.coords.latitude;
-
-    const longitude =
-      location.coords.longitude;
+    const latitude = location.coords.latitude;
+    const longitude = location.coords.longitude;
 
     const url =
-      `https://www.google.com/maps/search/?api=1&query=police+station+near+${latitude},${longitude}`;
+      `https://www.google.com/maps/search/?api=1&query=` +
+      `police+station+near+${latitude},${longitude}`;
 
     try {
       await Linking.openURL(url);
@@ -648,44 +668,35 @@ Longitude: ${currentLocation.coords.longitude.toFixed(6)}`;
     }
   };
 
-  // =====================================================
+  // ----------------------------------------------------
   // SEND SOS
-  // =====================================================
+  // ----------------------------------------------------
 
   const sendSOS = async () => {
     if (!checkContacts()) {
       return;
     }
 
+    setShowConfirmation(false);
+
+    const currentLocation = await getLocation();
+
     const recipients = [
       contact1,
       contact2,
     ].filter(Boolean);
 
-    /*
-     * IMPORTANT:
-     * We DO NOT request location here.
-     * We DO NOT reverse-geocode here.
-     * We DO NOT check SMS availability here.
-     *
-     * Everything needed for SMS is already ready.
-     */
-
-    const emergencyName =
-      getEmergencyName();
-
-    const emergencyDetail =
-      getFinalDetail();
+    const emergencyName = getEmergencyName();
+    const emergencyDetail = getFinalDetail();
 
     const locationText =
-      getLocationText(location);
+      getLocationText(currentLocation);
 
     const mapsLink =
-      getGoogleMapsLink(location);
+      getGoogleMapsLink(currentLocation);
 
     const addressText =
-      locationAddress ||
-      "Address unavailable";
+      locationAddress || "Address unavailable";
 
     const message = `🚨 SAFE TOURISM SOS ALERT 🚨
 
@@ -711,32 +722,58 @@ Please contact me immediately.
 
 This emergency alert was generated by Safe Tourism App.`;
 
-    /*
-     * Close screen before opening SMS.
-     */
-    setShowConfirmation(false);
+    Alert.alert(
+      "SOS READY",
+      "Choose how you want to respond.",
+      [
+        {
+          text: "SEND SOS SMS",
+          onPress: async () => {
+            try {
+              const available =
+                await SMS.isAvailableAsync();
 
-    /*
-     * Directly open native SMS composer.
-     */
-    try {
-      await SMS.sendSMSAsync(
-        recipients,
-        message
-      );
-    } catch (error) {
-      console.log("SMS error:", error);
+              if (!available) {
+                Alert.alert(
+                  "SMS Unavailable",
+                  "SMS is not available on this device."
+                );
+                return;
+              }
 
-      Alert.alert(
-        "SMS Error",
-        "Unable to open the SMS composer."
-      );
-    }
+              await SMS.sendSMSAsync(
+                recipients,
+                message
+              );
+            } catch (error) {
+              console.log("SMS error:", error);
+
+              Alert.alert(
+                "SMS Error",
+                "Unable to open the emergency SMS."
+              );
+            }
+          },
+        },
+        {
+          text: "CALL 112",
+          onPress: call112,
+        },
+        {
+          text: "FIND NEARBY POLICE",
+          onPress: findNearbyPolice,
+        },
+        {
+          text: "CANCEL",
+          style: "cancel",
+        },
+      ]
+    );
   };
 
-  // =====================================================
-  // RESET
-  // =====================================================
+  // ----------------------------------------------------
+  // RESET FLOW
+  // ----------------------------------------------------
 
   const resetFlow = () => {
     setShowEmergencyTypes(false);
@@ -750,17 +787,15 @@ This emergency alert was generated by Safe Tourism App.`;
     setWhoNeedsHelp("Me");
   };
 
-  // =====================================================
-  // EMERGENCY TYPES SCREEN
-  // =====================================================
+  // ====================================================
+  // EMERGENCY TYPE SCREEN
+  // ====================================================
 
   if (showEmergencyTypes) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
@@ -806,15 +841,11 @@ This emergency alert was generated by Safe Tourism App.`;
                 key={item.id}
                 style={styles.categoryCard}
                 onPress={() =>
-                  selectEmergencyType(
-                    item.id
-                  )
+                  selectEmergencyType(item.id)
                 }
                 activeOpacity={0.8}
               >
-                <View
-                  style={styles.categoryIcon}
-                >
+                <View style={styles.categoryIcon}>
                   <Ionicons
                     name={item.icon}
                     size={30}
@@ -822,17 +853,11 @@ This emergency alert was generated by Safe Tourism App.`;
                   />
                 </View>
 
-                <Text
-                  style={styles.categoryTitle}
-                >
+                <Text style={styles.categoryTitle}>
                   {item.title}
                 </Text>
 
-                <Text
-                  style={
-                    styles.categorySubtitle
-                  }
-                >
+                <Text style={styles.categorySubtitle}>
                   {item.subtitle}
                 </Text>
               </TouchableOpacity>
@@ -843,40 +868,29 @@ This emergency alert was generated by Safe Tourism App.`;
     );
   }
 
-  // =====================================================
+  // ====================================================
   // EMERGENCY DETAILS SCREEN
-  // =====================================================
+  // ====================================================
 
-  if (
-    showEmergencyDetails &&
-    selectedEmergency
-  ) {
-    const selectedType =
-      EMERGENCY_TYPES.find(
-        (item) =>
-          item.id === selectedEmergency
-      );
+  if (showEmergencyDetails && selectedEmergency) {
+    const selectedType = EMERGENCY_TYPES.find(
+      (item) => item.id === selectedEmergency
+    );
 
     const options =
-      EMERGENCY_OPTIONS[
-        selectedEmergency
-      ];
+      EMERGENCY_OPTIONS[selectedEmergency];
 
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => {
-                setShowEmergencyDetails(
-                  false
-                );
+                setShowEmergencyDetails(false);
                 setShowEmergencyTypes(true);
               }}
             >
@@ -899,14 +913,8 @@ This emergency alert was generated by Safe Tourism App.`;
           </View>
 
           {selectedEmergency === "lost" && (
-            <View
-              style={
-                styles.locationHighlight
-              }
-            >
-              <View
-                style={styles.locationIcon}
-              >
+            <View style={styles.locationHighlight}>
+              <View style={styles.locationIcon}>
                 <Ionicons
                   name="navigate"
                   size={25}
@@ -915,11 +923,7 @@ This emergency alert was generated by Safe Tourism App.`;
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.locationHighlightTitle
-                  }
-                >
+                <Text style={styles.locationHighlightTitle}>
                   Your Current Location
                 </Text>
 
@@ -928,8 +932,7 @@ This emergency alert was generated by Safe Tourism App.`;
                     size="small"
                     color="#00D4FF"
                     style={{
-                      alignSelf:
-                        "flex-start",
+                      alignSelf: "flex-start",
                       marginTop: 8,
                     }}
                   />
@@ -970,62 +973,56 @@ This emergency alert was generated by Safe Tourism App.`;
               What happened?
             </Text>
 
-            <Text
-              style={styles.questionSubtitle}
-            >
-              Select the option that
-              describes your situation.
+            <Text style={styles.questionSubtitle}>
+              Select the option that describes your situation.
             </Text>
           </View>
 
-          <View
-            style={styles.optionsContainer}
-          >
-            {options.map((option) => (
-              <TouchableOpacity
-                key={option.id}
-                style={[
-                  styles.detailOption,
-                  selectedEmergencyDetail ===
-                    option.title &&
-                    styles.detailOptionSelected,
-                ]}
-                onPress={() =>
-                  selectEmergencyDetail(
-                    option
-                  )
-                }
-                activeOpacity={0.8}
-              >
-                <View
-                  style={styles.detailIcon}
+          <View style={styles.optionsContainer}>
+            {options.map((option) => {
+              const isOther =
+                option.id === "other";
+
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.detailOption,
+                    selectedEmergencyDetail ===
+                      option.title &&
+                      styles.detailOptionSelected,
+                  ]}
+                  onPress={() =>
+                    selectEmergencyDetail(option)
+                  }
+                  activeOpacity={0.8}
                 >
+                  <View style={styles.detailIcon}>
+                    <Ionicons
+                      name={option.icon}
+                      size={23}
+                      color="#00D4FF"
+                    />
+                  </View>
+
+                  <Text
+                    style={styles.detailOptionText}
+                  >
+                    {option.title}
+                  </Text>
+
                   <Ionicons
-                    name={option.icon}
-                    size={23}
-                    color="#00D4FF"
+                    name={
+                      isOther
+                        ? "create-outline"
+                        : "chevron-forward"
+                    }
+                    size={21}
+                    color="#8892A8"
                   />
-                </View>
-
-                <Text
-                  style={
-                    styles.detailOptionText
-                  }
-                >
-                  {option.title}
-                </Text>
-
-                <Ionicons
-                  name={
-                    option.id === "other"
-                      ? "create-outline"
-                      : "chevron-forward"
-                  }
-                  size={21}
-                  color="#8892A8"
-                />
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {selectedEmergencyDetail
@@ -1038,9 +1035,7 @@ This emergency alert was generated by Safe Tourism App.`;
 
               <TextInput
                 value={customDetails}
-                onChangeText={
-                  setCustomDetails
-                }
+                onChangeText={setCustomDetails}
                 placeholder="Write a short description..."
                 placeholderTextColor="#687286"
                 multiline
@@ -1049,18 +1044,10 @@ This emergency alert was generated by Safe Tourism App.`;
               />
 
               <TouchableOpacity
-                style={
-                  styles.continueButton
-                }
-                onPress={
-                  continueCustomDetails
-                }
+                style={styles.continueButton}
+                onPress={continueCustomDetails}
               >
-                <Text
-                  style={
-                    styles.continueButtonText
-                  }
-                >
+                <Text style={styles.continueButtonText}>
                   CONTINUE
                 </Text>
 
@@ -1077,17 +1064,15 @@ This emergency alert was generated by Safe Tourism App.`;
     );
   }
 
-  // =====================================================
-  // WHO NEEDS HELP
-  // =====================================================
+  // ====================================================
+  // WHO NEEDS HELP SCREEN
+  // ====================================================
 
   if (showWhoNeedsHelp) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
@@ -1126,8 +1111,7 @@ This emergency alert was generated by Safe Tourism App.`;
             </Text>
 
             <Text style={styles.stepSubtitle}>
-              This information will be
-              included in the SOS alert.
+              This information will be included in the SOS alert.
             </Text>
           </View>
 
@@ -1167,9 +1151,7 @@ This emergency alert was generated by Safe Tourism App.`;
             <TouchableOpacity
               style={styles.whoCard}
               onPress={() =>
-                selectWhoNeedsHelp(
-                  "Someone Else"
-                )
+                selectWhoNeedsHelp("Someone Else")
               }
               activeOpacity={0.8}
             >
@@ -1201,9 +1183,7 @@ This emergency alert was generated by Safe Tourism App.`;
             <TouchableOpacity
               style={styles.whoCard}
               onPress={() =>
-                selectWhoNeedsHelp(
-                  "Multiple People"
-                )
+                selectWhoNeedsHelp("Multiple People")
               }
               activeOpacity={0.8}
             >
@@ -1237,17 +1217,15 @@ This emergency alert was generated by Safe Tourism App.`;
     );
   }
 
-  // =====================================================
-  // CONFIRMATION
-  // =====================================================
+  // ====================================================
+  // CONFIRMATION SCREEN
+  // ====================================================
 
   if (showConfirmation) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
@@ -1273,9 +1251,7 @@ This emergency alert was generated by Safe Tourism App.`;
             </View>
           </View>
 
-          <View
-            style={styles.confirmWarning}
-          >
+          <View style={styles.confirmWarning}>
             <View style={styles.warningIcon}>
               <Ionicons
                 name="warning"
@@ -1290,8 +1266,7 @@ This emergency alert was generated by Safe Tourism App.`;
               </Text>
 
               <Text style={styles.warningText}>
-                Make sure the information below
-                is correct.
+                Make sure the information below is correct.
               </Text>
             </View>
           </View>
@@ -1341,50 +1316,55 @@ This emergency alert was generated by Safe Tourism App.`;
               CURRENT LOCATION
             </Text>
 
-            <View style={styles.locationSummaryRow}>
-              <Ionicons
-                name="location"
-                size={23}
+            {loading ? (
+              <ActivityIndicator
+                size="small"
                 color="#00D4FF"
               />
+            ) : (
+              <>
+                <View style={styles.locationSummaryRow}>
+                  <Ionicons
+                    name="location"
+                    size={23}
+                    color="#00D4FF"
+                  />
 
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.locationSummaryAddress
-                  }
-                >
-                  {locationAddress ||
-                    "Address unavailable"}
-                </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={
+                        styles.locationSummaryAddress
+                      }
+                    >
+                      {locationAddress ||
+                        "Address unavailable"}
+                    </Text>
 
-                {location && (
-                  <Text
-                    style={
-                      styles.locationSummaryCoordinates
-                    }
-                  >
-                    Lat:{" "}
-                    {location.coords.latitude.toFixed(
-                      6
+                    {location && (
+                      <Text
+                        style={
+                          styles.locationSummaryCoordinates
+                        }
+                      >
+                        Lat:{" "}
+                        {location.coords.latitude.toFixed(
+                          6
+                        )}
+                        {"\n"}
+                        Long:{" "}
+                        {location.coords.longitude.toFixed(
+                          6
+                        )}
+                      </Text>
                     )}
-                    {"\n"}
-                    Long:{" "}
-                    {location.coords.longitude.toFixed(
-                      6
-                    )}
-                  </Text>
-                )}
-              </View>
-            </View>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           <View style={styles.contactsSummary}>
-            <View
-              style={
-                styles.contactsSummaryIcon
-              }
-            >
+            <View style={styles.contactsSummaryIcon}>
               <Ionicons
                 name="people"
                 size={22}
@@ -1393,33 +1373,23 @@ This emergency alert was generated by Safe Tourism App.`;
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text
-                style={
-                  styles.contactsSummaryTitle
-                }
-              >
+              <Text style={styles.contactsSummaryTitle}>
                 Emergency Contacts
               </Text>
 
-              {contact1 && (
-                <Text
-                  style={
-                    styles.contactsSummaryText
-                  }
-                >
-                  {contact1}
-                </Text>
-              )}
+              <Text
+                style={styles.contactsSummaryText}
+              >
+                {contact1 || "Not available"}
+              </Text>
 
-              {contact2 && (
+              {contact2 ? (
                 <Text
-                  style={
-                    styles.contactsSummaryText
-                  }
+                  style={styles.contactsSummaryText}
                 >
                   {contact2}
                 </Text>
-              )}
+              ) : null}
             </View>
           </View>
 
@@ -1472,18 +1442,17 @@ This emergency alert was generated by Safe Tourism App.`;
           </TouchableOpacity>
 
           <Text style={styles.footerNote}>
-            Your current GPS location and
-            Google Maps link will be included
-            in the emergency SMS.
+            Your current GPS location will be included
+            in the SOS message.
           </Text>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // =====================================================
+  // ====================================================
   // MAIN SOS SCREEN
-  // =====================================================
+  // ====================================================
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1491,6 +1460,8 @@ This emergency alert was generated by Safe Tourism App.`;
         contentContainerStyle={styles.mainScroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* HEADER */}
+
         <View style={styles.mainHeader}>
           <View>
             <Text style={styles.mainTitle}>
@@ -1511,6 +1482,8 @@ This emergency alert was generated by Safe Tourism App.`;
           </View>
         </View>
 
+        {/* STATUS */}
+
         <View style={styles.statusCard}>
           <View style={styles.statusDot} />
 
@@ -1520,10 +1493,12 @@ This emergency alert was generated by Safe Tourism App.`;
             </Text>
 
             <Text style={styles.statusSubtitle}>
-              Emergency contacts are ready
+              Emergency contacts and location are available
             </Text>
           </View>
         </View>
+
+        {/* MAIN SOS */}
 
         <View style={styles.sosSection}>
           <Text style={styles.sosSectionTitle}>
@@ -1575,6 +1550,8 @@ This emergency alert was generated by Safe Tourism App.`;
           )}
         </View>
 
+        {/* CATEGORY FLOW */}
+
         <View style={styles.orContainer}>
           <View style={styles.orLine} />
 
@@ -1603,11 +1580,8 @@ This emergency alert was generated by Safe Tourism App.`;
               Tell us what happened
             </Text>
 
-            <Text
-              style={styles.categoryStartSubtitle}
-            >
-              Choose an emergency type for a
-              detailed alert
+            <Text style={styles.categoryStartSubtitle}>
+              Choose an emergency type for a more detailed alert
             </Text>
           </View>
 
@@ -1617,6 +1591,8 @@ This emergency alert was generated by Safe Tourism App.`;
             color="#8892A8"
           />
         </TouchableOpacity>
+
+        {/* LOCATION */}
 
         <View style={styles.locationCard}>
           <View style={styles.locationCardIcon}>
@@ -1650,9 +1626,7 @@ This emergency alert was generated by Safe Tourism App.`;
 
                 {location && (
                   <Text
-                    style={
-                      styles.locationCoordinates
-                    }
+                    style={styles.locationCoordinates}
                   >
                     {location.coords.latitude.toFixed(
                       6
@@ -1667,6 +1641,8 @@ This emergency alert was generated by Safe Tourism App.`;
             )}
           </View>
         </View>
+
+        {/* CONTACTS */}
 
         <View style={styles.contactsCard}>
           <View style={styles.contactsIcon}>
@@ -1684,17 +1660,17 @@ This emergency alert was generated by Safe Tourism App.`;
 
             {contact1 || contact2 ? (
               <>
-                {contact1 && (
+                {contact1 ? (
                   <Text style={styles.contactNumber}>
                     {contact1}
                   </Text>
-                )}
+                ) : null}
 
-                {contact2 && (
+                {contact2 ? (
                   <Text style={styles.contactNumber}>
                     {contact2}
                   </Text>
-                )}
+                ) : null}
               </>
             ) : (
               <Text style={styles.noContactText}>
@@ -1704,6 +1680,8 @@ This emergency alert was generated by Safe Tourism App.`;
           </View>
         </View>
 
+        {/* INFO */}
+
         <View style={styles.infoNotice}>
           <Ionicons
             name="information-circle-outline"
@@ -1712,11 +1690,13 @@ This emergency alert was generated by Safe Tourism App.`;
           />
 
           <Text style={styles.infoText}>
-            SOS includes your emergency details,
-            current GPS coordinates and a Google
-            Maps location link.
+            Your SOS alert includes your emergency type,
+            details, current GPS location and a Google Maps
+            location link.
           </Text>
         </View>
+
+        {/* 112 */}
 
         <TouchableOpacity
           style={styles.main112Button}
@@ -1735,8 +1715,7 @@ This emergency alert was generated by Safe Tourism App.`;
             </Text>
 
             <Text style={styles.main112Subtitle}>
-              Call 112 for immediate emergency
-              assistance
+              Call 112 for immediate emergency assistance
             </Text>
           </View>
 
@@ -1770,6 +1749,8 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 45,
   },
+
+  // HEADER
 
   mainHeader: {
     flexDirection: "row",
@@ -1831,6 +1812,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  // STATUS
+
   statusCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1861,6 +1844,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 3,
   },
+
+  // SOS
 
   sosSection: {
     alignItems: "center",
@@ -1946,6 +1931,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF416C",
   },
 
+  // OR
+
   orContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1964,6 +1951,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginHorizontal: 15,
   },
+
+  // CATEGORY START
 
   categoryStartCard: {
     flexDirection: "row",
@@ -1999,6 +1988,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingRight: 8,
   },
+
+  // LOCATION
 
   locationCard: {
     flexDirection: "row",
@@ -2039,6 +2030,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  // CONTACTS
+
   contactsCard: {
     flexDirection: "row",
     backgroundColor: "#0D1729",
@@ -2077,6 +2070,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
+  // INFO
+
   infoNotice: {
     flexDirection: "row",
     backgroundColor: "#0C1728",
@@ -2095,6 +2090,8 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginLeft: 10,
   },
+
+  // 112
 
   main112Button: {
     flexDirection: "row",
@@ -2125,6 +2122,8 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
+  // STEP
+
   stepCard: {
     backgroundColor: "#0D1729",
     borderRadius: 19,
@@ -2154,6 +2153,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 17,
   },
+
+  // CATEGORY GRID
 
   categoryGrid: {
     flexDirection: "row",
@@ -2195,6 +2196,8 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
+  // QUESTION
+
   questionCard: {
     marginBottom: 15,
   },
@@ -2210,6 +2213,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
+
+  // DETAILS
 
   optionsContainer: {
     marginBottom: 15,
@@ -2247,6 +2252,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
+
+  // CUSTOM
 
   customBox: {
     backgroundColor: "#0D1729",
@@ -2293,6 +2300,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
+  // LOCATION HIGHLIGHT
+
   locationHighlight: {
     flexDirection: "row",
     backgroundColor: "#0C1C2B",
@@ -2332,6 +2341,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  // WHO
+
   whoContainer: {
     marginTop: 3,
   },
@@ -2368,6 +2379,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
+
+  // CONFIRMATION
 
   confirmWarning: {
     flexDirection: "row",
