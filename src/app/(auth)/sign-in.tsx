@@ -1,87 +1,197 @@
 
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 
-type UserRole = "Tourist" | "Agent" | "Publisher";
+type UserRole = "Tourist" | "Agent";
+
+type DemoAccount = {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: "tourist" | "agent";
+  hotelName: string;
+  hotelAddress: string;
+  agentId: string;
+  verificationStatus: "pending" | "not_required";
+};
+
+const STORAGE_KEY = "safeTourismDemoAccounts";
+const AGENT_VERIFICATION_CODE = "AGENT2026";
 
 export default function SignInScreen() {
   const [role, setRole] = useState<UserRole>("Tourist");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSignIn = async () => {
-    const identifier = email.trim();
+    const cleanIdentifier = identifier.trim().toLowerCase();
+    const cleanPassword = password;
+    const enteredAgentId = agentId.trim().toUpperCase();
+    const enteredVerificationCode = verificationCode.trim().toUpperCase();
 
-    if (!identifier || !password.trim()) {
+    if (!cleanIdentifier || !cleanPassword) {
       Alert.alert(
         "Missing Details",
-        "Please enter your email/phone and password."
+        "Please enter your email or phone number and password."
       );
       return;
     }
 
-    if (loading) return;
+    if (role === "Agent") {
+      if (!enteredAgentId || !enteredVerificationCode) {
+        Alert.alert(
+          "Missing Agent Details",
+          "Please enter your Agent ID and verification code."
+        );
+        return;
+      }
+
+      if (enteredVerificationCode !== AGENT_VERIFICATION_CODE) {
+        Alert.alert(
+          "Verification Failed",
+          "The verification code is incorrect. Please check it and try again."
+        );
+        return;
+      }
+    }
 
     setLoading(true);
 
     try {
-      // Authentication API will be connected here.
-      // Do not navigate to protected dashboards until
-      // credentials and the assigned role are verified.
+      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
+      const accounts: DemoAccount[] = storedData
+        ? JSON.parse(storedData)
+        : [];
 
+      const account = accounts.find((item) => {
+        const savedEmail = String(item.email ?? "").trim().toLowerCase();
+        const savedPhone = String(item.phone ?? "").trim();
+
+        return (
+          savedEmail === cleanIdentifier ||
+          savedPhone === identifier.trim()
+        );
+      });
+
+      if (!account) {
+        Alert.alert(
+          "Account Not Found",
+          "No account was found with these details. Please sign up first."
+        );
+        return;
+      }
+
+      if (account.password !== cleanPassword) {
+        Alert.alert(
+          "Incorrect Password",
+          "The password you entered is incorrect."
+        );
+        return;
+      }
+
+      const savedRole =
+        String(account.role ?? "").trim().toLowerCase();
+
+      if (role === "Agent" && savedRole !== "agent") {
+        Alert.alert(
+          "Role Mismatch",
+          "This account is registered as a Tourist. Please select Tourist to sign in."
+        );
+        return;
+      }
+
+      if (role === "Tourist" && savedRole !== "tourist") {
+        Alert.alert(
+          "Role Mismatch",
+          "This account is registered as an Agent. Please select Agent to sign in."
+        );
+        return;
+      }
+
+      if (role === "Agent") {
+        const savedAgentId = String(account.agentId ?? "")
+          .trim()
+          .toUpperCase();
+
+        if (!savedAgentId) {
+          Alert.alert(
+            "Agent ID Missing",
+            "Agent ID is not saved in this account. Please check the ID used during registration. If the account was created with an older signup screen, we need to repair the saved account."
+          );
+          return;
+        }
+
+        if (savedAgentId !== enteredAgentId) {
+          Alert.alert(
+            "Invalid Agent ID",
+            "The Agent ID does not match the ID saved during registration. Enter the same ID you used when creating this account."
+          );
+          return;
+        }
+
+        await AsyncStorage.setItem(
+          "safeTourismCurrentUser",
+          JSON.stringify({
+            name: account.name,
+            email: account.email,
+            phone: account.phone,
+            role: account.role,
+            hotelName: account.hotelName,
+            hotelAddress: account.hotelAddress,
+            agentId: account.agentId,
+            verificationStatus: account.verificationStatus,
+          })
+        );
+
+        router.replace("/(agent)" as any);
+      } else {
+        await AsyncStorage.setItem(
+          "safeTourismCurrentUser",
+          JSON.stringify({
+            name: account.name,
+            email: account.email,
+            phone: account.phone,
+            role: account.role,
+          })
+        );
+
+        router.replace("/(drawer)" as any);
+      }
+    } catch (error) {
+      console.error("Sign-in error:", error);
       Alert.alert(
-        "Authentication Not Connected",
-        "Sign-in UI is ready. Connect your authentication API to log in securely."
+        "Sign In Failed",
+        "Something went wrong while signing in. Please try again."
       );
-    } catch {
-      Alert.alert("Error", "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const roles: {
-    title: UserRole;
-    subtitle: string;
-    icon: keyof typeof Ionicons.glyphMap;
-  }[] = [
-    {
-      title: "Tourist",
-      subtitle: "Explore safely",
-      icon: "person-outline",
-    },
-    {
-      title: "Agent",
-      subtitle: "Verify stays",
-      icon: "business-outline",
-    },
-    {
-      title: "Publisher",
-      subtitle: "Monitor records",
-      icon: "analytics-outline",
-    },
-  ];
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        style={styles.flex}
+        style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
@@ -89,204 +199,228 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo */}
-          <View style={styles.logoContainer}>
+          <View style={styles.header}>
             <View style={styles.logoCircle}>
-              <Ionicons name="shield-checkmark" size={39} color="#00D4FF" />
+              <Ionicons
+                name="shield-checkmark"
+                size={36}
+                color="#00D4FF"
+              />
             </View>
 
-            <Text style={styles.appName}>SAFE TOURISM</Text>
+            <Text style={styles.brand}>SAFE TOURISM</Text>
             <Text style={styles.tagline}>
               Travel Safe. Explore Freely.
             </Text>
           </View>
 
-          {/* Heading */}
-          <View style={styles.headingContainer}>
-            <Text style={styles.heading}>Welcome Back!</Text>
-            <Text style={styles.description}>
+          <View style={styles.card}>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>
               Sign in to continue your safe journey.
             </Text>
-          </View>
 
-          {/* Role Selection */}
-          <Text style={styles.label}>CONTINUE AS</Text>
+            <Text style={styles.sectionLabel}>SIGN IN AS</Text>
 
-          <View style={styles.roleContainer}>
-            {roles.map((item) => {
-              const selected = role === item.title;
-
-              return (
-                <TouchableOpacity
-                  key={item.title}
-                  activeOpacity={0.8}
+            <View style={styles.roleContainer}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.roleButton,
+                  role === "Tourist" && styles.selectedRole,
+                ]}
+                onPress={() => setRole("Tourist")}
+              >
+                <Ionicons
+                  name="person-outline"
+                  size={21}
+                  color={role === "Tourist" ? "#FFFFFF" : "#8993AD"}
+                />
+                <Text
                   style={[
-                    styles.roleCard,
-                    selected && styles.roleCardSelected,
+                    styles.roleText,
+                    role === "Tourist" && styles.selectedRoleText,
                   ]}
-                  onPress={() => setRole(item.title)}
                 >
+                  Tourist
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.roleButton,
+                  role === "Agent" && styles.selectedRole,
+                ]}
+                onPress={() => setRole("Agent")}
+              >
+                <Ionicons
+                  name="business-outline"
+                  size={21}
+                  color={role === "Agent" ? "#FFFFFF" : "#8993AD"}
+                />
+                <Text
+                  style={[
+                    styles.roleText,
+                    role === "Agent" && styles.selectedRoleText,
+                  ]}
+                >
+                  Agent
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Email or Phone Number</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color="#8993AD"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter email or phone"
+                placeholderTextColor="#69738D"
+                value={identifier}
+                onChangeText={setIdentifier}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoCorrect={false}
+              />
+            </View>
+
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={20}
+                color="#8993AD"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                placeholderTextColor="#69738D"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#8993AD"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {role === "Agent" && (
+              <>
+                <View style={styles.agentNotice}>
                   <Ionicons
-                    name={item.icon}
-                    size={25}
-                    color={selected ? "#00D4FF" : "#8B95AA"}
+                    name="shield-checkmark-outline"
+                    size={21}
+                    color="#00D4FF"
                   />
+                  <View style={styles.noticeTextContainer}>
+                    <Text style={styles.noticeTitle}>
+                      Agent Verification
+                    </Text>
+                    <Text style={styles.noticeDescription}>
+                      Enter the Agent ID used during registration and the
+                      demo verification code.
+                    </Text>
+                  </View>
+                </View>
 
-                  <Text
-                    style={[
-                      styles.roleTitle,
-                      selected && styles.selectedText,
-                    ]}
-                  >
-                    {item.title}
-                  </Text>
+                <Text style={styles.label}>Agent ID</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="id-card-outline"
+                    size={20}
+                    color="#8993AD"
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your registered Agent ID"
+                    placeholderTextColor="#69738D"
+                    value={agentId}
+                    onChangeText={setAgentId}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                </View>
 
-                  <Text style={styles.roleSubtitle}>
-                    {item.subtitle}
-                  </Text>
+                <Text style={styles.label}>Verification Code</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="key-outline"
+                    size={20}
+                    color="#8993AD"
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter verification code"
+                    placeholderTextColor="#69738D"
+                    value={verificationCode}
+                    onChangeText={setVerificationCode}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                </View>
 
-                  {selected && (
-                    <View style={styles.selectedIndicator}>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={17}
-                        color="#00D4FF"
-                      />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Email / Phone */}
-          <Text style={styles.label}>EMAIL OR PHONE NUMBER</Text>
-
-          <View style={styles.inputContainer}>
-            <Ionicons
-              name="person-outline"
-              size={20}
-              color="#8B95AA"
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Enter email or phone number"
-              placeholderTextColor="#707B90"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              returnKeyType="next"
-            />
-          </View>
-
-          {/* Password */}
-          <Text style={styles.label}>PASSWORD</Text>
-
-          <View style={styles.inputContainer}>
-            <Ionicons
-              name="lock-closed-outline"
-              size={20}
-              color="#8B95AA"
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              placeholderTextColor="#707B90"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              returnKeyType="done"
-              onSubmitEditing={handleSignIn}
-            />
+                <Text style={styles.helperText}>
+                  Demo code: AGENT2026
+                </Text>
+              </>
+            )}
 
             <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              accessibilityLabel={
-                showPassword ? "Hide password" : "Show password"
-              }
+              activeOpacity={0.85}
+              style={[
+                styles.signInButton,
+                loading && styles.disabledButton,
+              ]}
+              onPress={handleSignIn}
+              disabled={loading}
             >
-              <Ionicons
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
-                size={21}
-                color="#8B95AA"
-              />
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.signInButtonText}>Sign In</Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color="#FFFFFF"
+                  />
+                </>
+              )}
             </TouchableOpacity>
+
+            <View style={styles.signupRow}>
+              <Text style={styles.signupText}>
+                Don't have an account?{" "}
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push("/(auth)/sign-up" as any)}
+              >
+                <Text style={styles.signupLink}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Forgot Password */}
-          <TouchableOpacity
-            style={styles.forgotContainer}
-            onPress={() =>
-              Alert.alert(
-                "Forgot Password",
-                "Password recovery will be available after authentication is connected."
-              )
-            }
-          >
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          {/* Sign In Button */}
-          <TouchableOpacity
-            style={[
-              styles.signInButton,
-              loading && styles.buttonDisabled,
-            ]}
-            onPress={handleSignIn}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <View style={styles.buttonContent}>
-                <Text style={styles.signInButtonText}>Sign In Securely</Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={20}
-                  color="#FFFFFF"
-                />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>NEW TO SAFE TOURISM?</Text>
-            <View style={styles.divider} />
-          </View>
-
-          {/* Sign Up */}
-          <TouchableOpacity
-            style={styles.signUpButton}
-            activeOpacity={0.8}
-            onPress={() => router.push("../(auth)/sign-up")}
-          >
-            <Text style={styles.signUpText}>
-              Create New Account
-            </Text>
-            <Ionicons
-              name="person-add-outline"
-              size={19}
-              color="#00D4FF"
-            />
-          </TouchableOpacity>
-
-          {/* Security Footer */}
           <View style={styles.footer}>
             <Ionicons
-              name="shield-checkmark-outline"
-              size={16}
-              color="#00D4FF"
+              name="lock-closed-outline"
+              size={14}
+              color="#69738D"
             />
             <Text style={styles.footerText}>
-              Your safety and privacy matter to us.
+              Your journey, your safety, our priority.
             </Text>
           </View>
         </ScrollView>
@@ -296,199 +430,206 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   safeArea: {
     flex: 1,
     backgroundColor: "#080D1B",
   },
+  keyboardView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 30,
-    paddingBottom: 35,
+    justifyContent: "center",
+    paddingHorizontal: 22,
+    paddingVertical: 28,
   },
-  logoContainer: {
+  header: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 28,
   },
   logoCircle: {
     width: 76,
     height: 76,
     borderRadius: 24,
-    backgroundColor: "#111C32",
+    backgroundColor: "#121D35",
     borderWidth: 1,
-    borderColor: "#243B5B",
+    borderColor: "#263958",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 13,
+    marginBottom: 15,
   },
-  appName: {
+  brand: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: "800",
     letterSpacing: 2,
   },
   tagline: {
-    color: "#8B95AA",
+    color: "#8993AD",
     fontSize: 13,
     marginTop: 7,
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
-  headingContainer: {
-    marginBottom: 25,
+  card: {
+    backgroundColor: "#0D1426",
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#202B43",
+    padding: 22,
   },
-  heading: {
+  title: {
     color: "#FFFFFF",
-    fontSize: 28,
+    fontSize: 27,
     fontWeight: "800",
-    marginBottom: 8,
   },
-  description: {
-    color: "#9BA6BB",
-    fontSize: 14,
-    lineHeight: 21,
+  subtitle: {
+    color: "#8993AD",
+    fontSize: 13,
+    marginTop: 7,
+    marginBottom: 24,
+    lineHeight: 20,
   },
-  label: {
-    color: "#B9C4D8",
+  sectionLabel: {
+    color: "#8993AD",
     fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 1.1,
+    letterSpacing: 1.4,
     marginBottom: 10,
-    marginTop: 17,
   },
   roleContainer: {
     flexDirection: "row",
-    gap: 9,
+    gap: 12,
+    marginBottom: 23,
   },
-  roleCard: {
+  roleButton: {
     flex: 1,
-    minHeight: 112,
-    backgroundColor: "#10182A",
-    borderRadius: 15,
+    minHeight: 53,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#202C42",
-    paddingVertical: 14,
-    paddingHorizontal: 5,
+    borderColor: "#29344D",
+    backgroundColor: "#101A2E",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    position: "relative",
+    gap: 9,
   },
-  roleCardSelected: {
-    backgroundColor: "#10253A",
-    borderColor: "#00D4FF",
+  selectedRole: {
+    backgroundColor: "#5149C8",
+    borderColor: "#7770FF",
   },
-  roleTitle: {
-    color: "#E0E6F0",
-    fontSize: 12,
+  roleText: {
+    color: "#8993AD",
+    fontSize: 14,
     fontWeight: "700",
   },
-  selectedText: {
-    color: "#00D4FF",
+  selectedRoleText: {
+    color: "#FFFFFF",
   },
-  roleSubtitle: {
-    color: "#8792A8",
-    fontSize: 9,
-    textAlign: "center",
-  },
-  selectedIndicator: {
-    position: "absolute",
-    top: 5,
-    right: 5,
+  label: {
+    color: "#DCE4F5",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 9,
+    marginTop: 3,
   },
   inputContainer: {
     minHeight: 54,
-    backgroundColor: "#10182A",
-    borderWidth: 1,
-    borderColor: "#27334A",
     borderRadius: 13,
-    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: "#29344D",
+    backgroundColor: "#090F1E",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    paddingHorizontal: 14,
+    gap: 11,
+    marginBottom: 17,
   },
   input: {
     flex: 1,
     color: "#FFFFFF",
     fontSize: 14,
-    paddingVertical: 14,
+    paddingVertical: 13,
   },
-  forgotContainer: {
-    alignSelf: "flex-end",
-    marginTop: 13,
+  agentNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: "#101F32",
+    borderColor: "#203D55",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 4,
+    marginBottom: 17,
   },
-  forgotText: {
+  noticeTextContainer: {
+    flex: 1,
+  },
+  noticeTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 5,
+  },
+  noticeDescription: {
+    color: "#9AA8C2",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  helperText: {
     color: "#00D4FF",
     fontSize: 12,
-    fontWeight: "600",
+    marginTop: -8,
+    marginBottom: 18,
   },
   signInButton: {
-    marginTop: 25,
     minHeight: 55,
+    borderRadius: 15,
     backgroundColor: "#635BEE",
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
+    marginTop: 7,
+    shadowColor: "#635BEE",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  disabledButton: {
+    opacity: 0.65,
   },
   signInButtonText: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 16,
+    fontWeight: "800",
   },
-  dividerContainer: {
+  signupRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 28,
-    marginBottom: 20,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#253047",
-  },
-  dividerText: {
-    color: "#8792A8",
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: 0.6,
-  },
-  signUpButton: {
-    minHeight: 53,
-    flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#34425D",
-    borderRadius: 14,
-    backgroundColor: "#0D1424",
+    alignItems: "center",
+    marginTop: 23,
+    flexWrap: "wrap",
   },
-  signUpText: {
-    color: "#E5EAF4",
-    fontSize: 14,
-    fontWeight: "600",
+  signupText: {
+    color: "#8993AD",
+    fontSize: 13,
+  },
+  signupLink: {
+    color: "#00D4FF",
+    fontSize: 13,
+    fontWeight: "800",
   },
   footer: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
     gap: 7,
-    marginTop: 28,
+    marginTop: 23,
   },
   footerText: {
-    color: "#8792A8",
+    color: "#69738D",
     fontSize: 11,
   },
 });
