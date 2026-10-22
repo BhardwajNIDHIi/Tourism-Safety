@@ -44,9 +44,11 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSignIn = async () => {
+    if (loading) return;
+
     const cleanIdentifier = identifier.trim().toLowerCase();
     const cleanPassword = password;
-    const enteredAgentId = agentId.trim().toUpperCase();
+    const enteredAgentId = agentId.trim().replace(/\s+/g, "").toUpperCase();
     const enteredVerificationCode = verificationCode.trim().toUpperCase();
 
     if (!cleanIdentifier || !cleanPassword) {
@@ -79,17 +81,33 @@ export default function SignInScreen() {
 
     try {
       const storedData = await AsyncStorage.getItem(STORAGE_KEY);
-      const accounts: DemoAccount[] = storedData
-        ? JSON.parse(storedData)
-        : [];
+      const parsedData: unknown = storedData ? JSON.parse(storedData) : [];
+
+      if (!Array.isArray(parsedData)) {
+        Alert.alert(
+          "Sign In Failed",
+          "Saved account data could not be read. Please try again."
+        );
+        return;
+      }
+
+      const accounts = parsedData as DemoAccount[];
+
+      const digitsOnly = (value: unknown) =>
+        String(value ?? "").replace(/\D/g, "");
+
+      const enteredPhone = digitsOnly(identifier);
 
       const account = accounts.find((item) => {
-        const savedEmail = String(item.email ?? "").trim().toLowerCase();
-        const savedPhone = String(item.phone ?? "").trim();
+        const savedEmail = String(item?.email ?? "")
+          .trim()
+          .toLowerCase();
+
+        const savedPhone = digitsOnly(item?.phone);
 
         return (
           savedEmail === cleanIdentifier ||
-          savedPhone === identifier.trim()
+          (enteredPhone.length > 0 && savedPhone === enteredPhone)
         );
       });
 
@@ -101,7 +119,7 @@ export default function SignInScreen() {
         return;
       }
 
-      if (account.password !== cleanPassword) {
+      if (String(account.password ?? "") !== cleanPassword) {
         Alert.alert(
           "Incorrect Password",
           "The password you entered is incorrect."
@@ -109,8 +127,7 @@ export default function SignInScreen() {
         return;
       }
 
-      const savedRole =
-        String(account.role ?? "").trim().toLowerCase();
+      const savedRole = String(account.role ?? "").trim().toLowerCase();
 
       if (role === "Agent" && savedRole !== "agent") {
         Alert.alert(
@@ -131,12 +148,13 @@ export default function SignInScreen() {
       if (role === "Agent") {
         const savedAgentId = String(account.agentId ?? "")
           .trim()
+          .replace(/\s+/g, "")
           .toUpperCase();
 
         if (!savedAgentId) {
           Alert.alert(
             "Agent ID Missing",
-            "Agent ID is not saved in this account. Please check the ID used during registration. If the account was created with an older signup screen, we need to repair the saved account."
+            "Agent ID is not saved in this account. Please check the ID used during registration."
           );
           return;
         }
@@ -149,6 +167,7 @@ export default function SignInScreen() {
           return;
         }
 
+        // Agent session: existing Agent flow preserved.
         await AsyncStorage.setItem(
           "safeTourismCurrentUser",
           JSON.stringify({
@@ -156,22 +175,24 @@ export default function SignInScreen() {
             email: account.email,
             phone: account.phone,
             role: account.role,
-            hotelName: account.hotelName,
-            hotelAddress: account.hotelAddress,
-            agentId: account.agentId,
-            verificationStatus: account.verificationStatus,
+            hotelName: account.hotelName ?? "",
+            hotelAddress: account.hotelAddress ?? "",
+            agentId: account.agentId ?? "",
+            verificationStatus:
+              account.verificationStatus ?? "pending",
           })
         );
 
         router.replace("/(agent)" as any);
       } else {
+        // Tourist session: save profile details for Settings.
         await AsyncStorage.setItem(
           "safeTourismCurrentUser",
           JSON.stringify({
-            name: account.name,
-            email: account.email,
-            phone: account.phone,
-            role: account.role,
+            name: account.name ?? "",
+            email: account.email ?? "",
+            phone: account.phone ?? "",
+            role: "tourist",
           })
         );
 
@@ -179,6 +200,7 @@ export default function SignInScreen() {
       }
     } catch (error) {
       console.error("Sign-in error:", error);
+
       Alert.alert(
         "Sign In Failed",
         "Something went wrong while signing in. Please try again."
@@ -406,7 +428,9 @@ export default function SignInScreen() {
                 Don't have an account?{" "}
               </Text>
               <TouchableOpacity
-                onPress={() => router.push("/(auth)/sign-up" as any)}
+                onPress={() =>
+                  router.push("/(auth)/sign-up" as any)
+                }
               >
                 <Text style={styles.signupLink}>Sign Up</Text>
               </TouchableOpacity>
