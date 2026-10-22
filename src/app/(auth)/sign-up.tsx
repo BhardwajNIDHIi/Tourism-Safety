@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import {
   View,
@@ -35,6 +34,7 @@ const STORAGE_KEY = "safeTourismDemoAccounts";
 
 const TOURIST_ROUTE = "/(drawer)";
 const AGENT_ROUTE = "/(agent)";
+const SIGN_IN_ROUTE = "/(auth)/sign-in";
 
 const normalizeEmail = (value: string) =>
   value.trim().toLowerCase();
@@ -146,7 +146,7 @@ export default function SignUpScreen() {
           );
         }
 
-        // Older demo accounts may not contain every newer field.
+        // Support existing saved accounts.
         accounts = parsedData.map((item: any) => ({
           name: String(item?.name ?? ""),
           email: String(item?.email ?? ""),
@@ -160,15 +160,14 @@ export default function SignUpScreen() {
           hotelAddress: String(item?.hotelAddress ?? ""),
           agentId: String(item?.agentId ?? ""),
           verificationStatus:
-            item?.verificationStatus === "not_required"
+            item?.verificationStatus === "not_required" ||
+            String(item?.role ?? "").toLowerCase() === "tourist"
               ? "not_required"
-              : item?.role === "tourist"
-                ? "not_required"
-                : "pending",
+              : "pending",
         }));
       }
 
-      // Email uniqueness check across all account roles.
+      // Check whether the email already exists.
       const emailExists = accounts.some(
         (account) =>
           normalizeEmail(account.email) === normalizedEmail
@@ -182,7 +181,7 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Phone uniqueness check across all account roles.
+      // Check whether the phone number already exists.
       const phoneExists = accounts.some(
         (account) =>
           normalizePhone(account.phone) === normalizedPhone
@@ -196,7 +195,7 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Only Agent accounts participate in Agent ID uniqueness.
+      // Agent ID uniqueness check applies only to Agents.
       if (role === "Agent") {
         const duplicateAgent = accounts.find(
           (account) =>
@@ -207,7 +206,7 @@ export default function SignUpScreen() {
         if (duplicateAgent) {
           Alert.alert(
             "Agent ID Already Exists",
-            `The Agent ID "${normalizedAgentId}" is already saved for an Agent account.\n\nPlease enter a different Agent ID. A new email or mobile number does not make a repeated Agent ID unique.`
+            `The Agent ID "${normalizedAgentId}" is already saved for an Agent account.\n\nPlease enter a different Agent ID.`
           );
           return;
         }
@@ -226,6 +225,7 @@ export default function SignUpScreen() {
           role === "Agent" ? "pending" : "not_required",
       };
 
+      // Save the account without deleting any existing accounts.
       const updatedAccounts = [...accounts, newAccount];
 
       await AsyncStorage.setItem(
@@ -233,45 +233,59 @@ export default function SignUpScreen() {
         JSON.stringify(updatedAccounts)
       );
 
-      // Save the signed-in demo user's details for the next screen.
-      await AsyncStorage.setItem(
-        "safeTourismCurrentUser",
-        JSON.stringify({
-          name: newAccount.name,
-          email: newAccount.email,
-          phone: newAccount.phone,
-          role: newAccount.role,
-          hotelName: newAccount.hotelName,
-          hotelAddress: newAccount.hotelAddress,
-          agentId: newAccount.agentId,
-          verificationStatus: newAccount.verificationStatus,
-        })
-      );
+      if (role === "Agent") {
+        // KEEP EXISTING AGENT FLOW.
+        await AsyncStorage.setItem(
+          "safeTourismCurrentUser",
+          JSON.stringify({
+            name: newAccount.name,
+            email: newAccount.email,
+            phone: newAccount.phone,
+            role: newAccount.role,
+            hotelName: newAccount.hotelName,
+            hotelAddress: newAccount.hotelAddress,
+            agentId: newAccount.agentId,
+            verificationStatus: newAccount.verificationStatus,
+          })
+        );
 
-      Alert.alert(
-        "Registration Successful",
-        role === "Agent"
-          ? "Your demo Agent account has been created. Agent verification is still pending."
-          : "Your Tourist account has been created.",
-        [
-          {
-            text: "Continue",
-            onPress: () => {
-              if (role === "Agent") {
+        Alert.alert(
+          "Registration Successful",
+          "Your demo Agent account has been created. Agent verification is still pending.",
+          [
+            {
+              text: "Continue",
+              onPress: () => {
                 router.replace(AGENT_ROUTE as any);
-              } else {
-                router.replace(TOURIST_ROUTE as any);
-              }
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      } else {
+        // TOURIST FLOW:
+        // Save the account, but do not automatically sign the Tourist in.
+        // Sign In will establish the active user after password verification.
+        await AsyncStorage.removeItem("safeTourismCurrentUser");
+
+        Alert.alert(
+          "Registration Successful",
+          "Your Tourist account has been created. Please sign in using your registered email and password.",
+          [
+            {
+              text: "Continue",
+              onPress: () => {
+                router.replace(SIGN_IN_ROUTE as any);
+              },
+            },
+          ]
+        );
+      }
     } catch (error) {
       console.error("Signup error:", error);
 
       Alert.alert(
         "Signup Failed",
-        "Could not save your demo account. Please try again."
+        "Could not save your account. Please try again."
       );
     } finally {
       setLoading(false);
@@ -325,7 +339,7 @@ export default function SignUpScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.replace("/(auth)/sign-in" as any)}
+              onPress={() => router.replace(SIGN_IN_ROUTE as any)}
             >
               <Ionicons
                 name="arrow-back"
@@ -360,18 +374,20 @@ export default function SignUpScreen() {
           <Text style={styles.label}>SELECT YOUR ROLE</Text>
 
           <View style={styles.roleContainer}>
-            {([
-              {
-                title: "Tourist",
-                subtitle: "Travel safely",
-                icon: "person-outline",
-              },
-              {
-                title: "Agent",
-                subtitle: "Hotel partner",
-                icon: "business-outline",
-              },
-            ] as const).map((item) => {
+            {(
+              [
+                {
+                  title: "Tourist",
+                  subtitle: "Travel safely",
+                  icon: "person-outline",
+                },
+                {
+                  title: "Agent",
+                  subtitle: "Hotel partner",
+                  icon: "business-outline",
+                },
+              ] as const
+            ).map((item) => {
               const selected = role === item.title;
 
               return (
@@ -441,8 +457,7 @@ export default function SignUpScreen() {
             "MOBILE NUMBER *",
             "Enter 10-digit mobile number",
             phone,
-            (value) =>
-              setPhone(normalizePhone(value).slice(0, 10)),
+            (value) => setPhone(normalizePhone(value).slice(0, 10)),
             "call-outline",
             { keyboardType: "phone-pad", maxLength: 10 }
           )}
@@ -612,9 +627,7 @@ export default function SignUpScreen() {
             </Text>
 
             <TouchableOpacity
-              onPress={() =>
-                router.replace("/(auth)/sign-in" as any)
-              }
+              onPress={() => router.replace(SIGN_IN_ROUTE as any)}
             >
               <Text style={styles.signInLink}> Sign In</Text>
             </TouchableOpacity>
@@ -639,7 +652,11 @@ export default function SignUpScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: "#080D1B" },
+
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#080D1B",
+  },
 
   scrollContent: {
     flexGrow: 1,
@@ -691,7 +708,9 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
 
-  headingContainer: { marginBottom: 15 },
+  headingContainer: {
+    marginBottom: 15,
+  },
 
   heading: {
     color: "#FFFFFF",
@@ -745,7 +764,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  selectedText: { color: "#00D4FF" },
+  selectedText: {
+    color: "#00D4FF",
+  },
 
   roleSubtitle: {
     color: "#8792A8",
@@ -833,7 +854,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  buttonDisabled: { opacity: 0.7 },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
 
   buttonContent: {
     flexDirection: "row",
