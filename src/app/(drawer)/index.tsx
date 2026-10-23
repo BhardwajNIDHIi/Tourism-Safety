@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -14,14 +21,14 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 
 /* =========================================================
    GOOGLE MAPS API KEY
-
-   Paste your Google Maps API key here.
 ========================================================= */
 
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const GOOGLE_MAPS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 /* =========================================================
    TYPES
@@ -54,8 +61,7 @@ type EmergencyService = {
 export default function HomeScreen() {
   const webViewRef = useRef<WebView>(null);
 
-  const [touristName, setTouristName] =
-    useState("Tourist");
+  const [touristName, setTouristName] = useState("Tourist");
 
   const [location, setLocation] =
     useState<LocationData | null>(null);
@@ -66,37 +72,74 @@ export default function HomeScreen() {
   const [servicesLoading, setServicesLoading] =
     useState(false);
 
-  const [selectedFilter, setSelectedFilter] =
-    useState<
-      "All" | "Hospital" | "Police Station"
-    >("All");
+  const [selectedFilter, setSelectedFilter] = useState<
+    "All" | "Hospital" | "Police Station"
+  >("All");
 
   const [nearbyServices, setNearbyServices] =
     useState<EmergencyService[]>([]);
 
   /* =========================================================
-     LOAD TOURIST NAME
+     LOAD LOGGED-IN TOURIST NAME
+
+     Current session is checked first.
+     Old touristName key is retained as a fallback.
+     Reloads whenever Home screen receives focus.
   ========================================================= */
 
-  useEffect(() => {
-    loadTouristName();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
 
-  const loadTouristName = async () => {
-    try {
-      const name =
-        await AsyncStorage.getItem("touristName");
+      const loadTouristName = async () => {
+        try {
+          let savedName = "";
 
-      if (name && name.trim()) {
-        setTouristName(name.trim());
-      }
-    } catch (error) {
-      console.log(
-        "Name loading error:",
-        error
-      );
-    }
-  };
+          const sessionString = await AsyncStorage.getItem(
+            "safeTourismCurrentUser"
+          );
+
+          if (sessionString) {
+            try {
+              const currentUser = JSON.parse(sessionString);
+
+              if (
+                typeof currentUser?.name === "string"
+              ) {
+                savedName = currentUser.name.trim();
+              } else if (
+                typeof currentUser?.touristName === "string"
+              ) {
+                savedName = currentUser.touristName.trim();
+              }
+            } catch (error) {
+              console.log("Session parsing error:", error);
+            }
+          }
+
+          if (!savedName) {
+            const legacyName = await AsyncStorage.getItem(
+              "touristName"
+            );
+
+            savedName = legacyName?.trim() || "";
+          }
+
+          if (isActive) {
+            setTouristName(savedName || "Tourist");
+          }
+        } catch (error) {
+          console.log("Name loading error:", error);
+        }
+      };
+
+      loadTouristName();
+
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
 
   /* =========================================================
      LOCATION
@@ -107,10 +150,14 @@ export default function HomeScreen() {
       | Location.LocationSubscription
       | null = null;
 
+    let isActive = true;
+
     const startLocation = async () => {
       try {
         const { status } =
           await Location.requestForegroundPermissionsAsync();
+
+        if (!isActive) return;
 
         if (status !== "granted") {
           setLocationLoading(false);
@@ -128,6 +175,8 @@ export default function HomeScreen() {
             accuracy: Location.Accuracy.High,
           });
 
+        if (!isActive) return;
+
         await updateLocation(current);
 
         subscription =
@@ -138,14 +187,15 @@ export default function HomeScreen() {
               distanceInterval: 50,
             },
             async (newLocation) => {
-              await updateLocation(newLocation);
+              if (isActive) {
+                await updateLocation(newLocation);
+              }
             }
           );
       } catch (error) {
-        console.log(
-          "Location error:",
-          error
-        );
+        console.log("Location error:", error);
+
+        if (!isActive) return;
 
         setLocationLoading(false);
 
@@ -159,6 +209,8 @@ export default function HomeScreen() {
     startLocation();
 
     return () => {
+      isActive = false;
+
       if (subscription) {
         subscription.remove();
       }
@@ -202,10 +254,7 @@ export default function HomeScreen() {
             "India";
         }
       } catch (error) {
-        console.log(
-          "Reverse geocode error:",
-          error
-        );
+        console.log("Reverse geocode error:", error);
       }
 
       const newLocation: LocationData = {
@@ -218,10 +267,6 @@ export default function HomeScreen() {
       setLocation(newLocation);
       setLocationLoading(false);
 
-      /* -----------------------------------------------
-         Send updated location to existing WebView
-      ------------------------------------------------ */
-
       setTimeout(() => {
         webViewRef.current?.postMessage(
           JSON.stringify({
@@ -232,11 +277,7 @@ export default function HomeScreen() {
         );
       }, 500);
     } catch (error) {
-      console.log(
-        "Update location error:",
-        error
-      );
-
+      console.log("Update location error:", error);
       setLocationLoading(false);
     }
   };
@@ -252,21 +293,14 @@ export default function HomeScreen() {
 
     return `
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
 <meta
   name="viewport"
-  content="width=device-width,
-  initial-scale=1.0,
-  maximum-scale=1.0,
-  user-scalable=no"
+  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
 />
 
 <style>
-
 html,
 body,
 #map {
@@ -279,129 +313,59 @@ body,
 body {
   overflow: hidden;
 }
-
 </style>
 
 <script>
-
 let map;
 let currentMarker;
-
 let serviceMarkers = [];
 
 let currentLat = ${location.latitude};
 let currentLng = ${location.longitude};
 
-/* =========================================================
-   SEND MESSAGE TO REACT NATIVE
-========================================================= */
-
 function sendMessage(data) {
-
-  window.ReactNativeWebView.postMessage(
-    JSON.stringify(data)
-  );
-
+  window.ReactNativeWebView.postMessage(JSON.stringify(data));
 }
 
-/* =========================================================
-   CALCULATE DISTANCE
-========================================================= */
-
-function calculateDistance(
-  lat1,
-  lon1,
-  lat2,
-  lon2
-) {
-
+function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
 
-  const dLat =
-    (lat2 - lat1) *
-    Math.PI /
-    180;
-
-  const dLon =
-    (lon2 - lon1) *
-    Math.PI /
-    180;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
 
   const a =
-    Math.sin(dLat / 2) *
-    Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
 
-    Math.cos(
-      lat1 * Math.PI / 180
-    ) *
-
-    Math.cos(
-      lat2 * Math.PI / 180
-    ) *
-
-    Math.sin(dLon / 2) *
-    Math.sin(dLon / 2);
-
-  const c =
-    2 *
-    Math.atan2(
-      Math.sqrt(a),
-      Math.sqrt(1 - a)
-    );
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
-
 }
-
-/* =========================================================
-   CLEAR OLD SERVICE MARKERS
-========================================================= */
 
 function clearServiceMarkers() {
-
-  serviceMarkers.forEach(
-    function(marker) {
-
-      marker.setMap(null);
-
-    }
-  );
+  serviceMarkers.forEach(function(marker) {
+    marker.setMap(null);
+  });
 
   serviceMarkers = [];
-
 }
 
-/* =========================================================
-   REAL NEARBY HOSPITAL + POLICE SEARCH
-========================================================= */
-
 async function findNearbyServices() {
-
   try {
-
-    sendMessage({
-      type: "servicesLoading"
-    });
+    sendMessage({ type: "servicesLoading" });
 
     clearServiceMarkers();
 
-    /*
-      Google Places API (New)
-    */
-
     const placesLibrary =
-      await google.maps.importLibrary(
-        "places"
-      );
+      await google.maps.importLibrary("places");
 
-    const Place =
-      placesLibrary.Place;
-
+    const Place = placesLibrary.Place;
     const SearchNearbyRankPreference =
       placesLibrary.SearchNearbyRankPreference;
 
     const request = {
-
       fields: [
         "displayName",
         "location",
@@ -412,550 +376,226 @@ async function findNearbyServices() {
       ],
 
       locationRestriction: {
-
         center: {
           lat: currentLat,
           lng: currentLng
         },
-
         radius: 2000
-
       },
 
-      includedPrimaryTypes: [
-        "hospital",
-        "police"
-      ],
-
+      includedPrimaryTypes: ["hospital", "police"],
       maxResultCount: 20,
 
       rankPreference:
         SearchNearbyRankPreference.DISTANCE
-
     };
 
-    const response =
-      await Place.searchNearby(
-        request
-      );
-
-    const places =
-      response.places || [];
-
+    const response = await Place.searchNearby(request);
+    const places = response.places || [];
     const services = [];
 
-    /* =====================================================
-       PROCESS RESULTS
-    ===================================================== */
-
-    places.forEach(
-      function(place) {
-
-        if (!place.location) {
-          return;
-        }
-
-        const latitude =
-          place.location.lat();
-
-        const longitude =
-          place.location.lng();
-
-        const distance =
-          calculateDistance(
-            currentLat,
-            currentLng,
-            latitude,
-            longitude
-          );
-
-        /*
-          Only show services within
-          exactly 2 KM.
-        */
-
-        if (distance > 2) {
-          return;
-        }
-
-        let type =
-          "Hospital";
-
-        if (
-          place.primaryType ===
-          "police"
-        ) {
-
-          type =
-            "Police Station";
-
-        }
-
-        /* =================================================
-           MAP MARKER
-        ================================================= */
-
-        const marker =
-          new google.maps.Marker({
-
-            map: map,
-
-            position: {
-              lat: latitude,
-              lng: longitude
-            },
-
-            title:
-              place.displayName?.text ||
-              type,
-
-            icon: {
-
-              url:
-                type === "Hospital"
-
-                  ? "https://maps.google.com/mapfiles/ms/icons/red-dot.png"
-
-                  : "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-
-            }
-
-          });
-
-        serviceMarkers.push(
-          marker
-        );
-
-        /* =================================================
-           INFO WINDOW
-        ================================================= */
-
-        const infoWindow =
-          new google.maps.InfoWindow({
-
-            content: \`
-              <div
-                style="
-                  min-width:200px;
-                  padding:8px;
-                  font-family:Arial;
-                "
-              >
-
-                <strong>
-                  \${place.displayName?.text || type}
-                </strong>
-
-                <br/>
-
-                <span>
-                  \${type}
-                </span>
-
-                <br/>
-
-                <span>
-                  \${distance.toFixed(2)} km away
-                </span>
-
-                <br/>
-
-                <small>
-                  \${place.formattedAddress || "Address unavailable"}
-                </small>
-
-              </div>
-            \`
-
-          });
-
-        marker.addListener(
-          "click",
-          function() {
-
-            infoWindow.open({
-              map: map,
-              anchor: marker
-            });
-
-          }
-        );
-
-        /* =================================================
-           SEND SERVICE TO REACT NATIVE
-        ================================================= */
-
-        services.push({
-
-          id:
-            place.id ||
-            (
-              Math.random()
-                .toString()
-            ),
-
-          name:
-            place.displayName?.text ||
-            type,
-
-          type:
-            type,
-
-          address:
-            place.formattedAddress ||
-            "Address unavailable",
-
-          distance:
-            distance,
-
-          latitude:
-            latitude,
-
-          longitude:
-            longitude,
-
-          googleMapsURI:
-            place.googleMapsURI ||
-            ""
-
-        });
-
+    places.forEach(function(place) {
+      if (!place.location) {
+        return;
       }
-    );
 
-    /* =====================================================
-       SORT BY DISTANCE
-    ===================================================== */
+      const latitude = place.location.lat();
+      const longitude = place.location.lng();
 
-    services.sort(
-      function(a, b) {
-
-        return (
-          a.distance -
-          b.distance
-        );
-
-      }
-    );
-
-    /* =====================================================
-       SEND RESULTS TO REACT NATIVE
-    ===================================================== */
-
-    sendMessage({
-
-      type:
-        "nearbyServices",
-
-      services:
-        services
-
-    });
-
-  } catch (error) {
-
-    console.log(
-      "GOOGLE PLACES ERROR:",
-      error
-    );
-
-    sendMessage({
-
-      type:
-        "servicesError",
-
-      message:
-        "Google Places could not load nearby hospitals and police stations."
-
-    });
-
-  }
-
-}
-
-/* =========================================================
-   INITIALIZE GOOGLE MAP
-========================================================= */
-
-async function initMap() {
-
-  try {
-
-    const mapsLibrary =
-      await google.maps.importLibrary(
-        "maps"
+      const distance = calculateDistance(
+        currentLat,
+        currentLng,
+        latitude,
+        longitude
       );
 
-    const Map =
-      mapsLibrary.Map;
+      if (distance > 2) {
+        return;
+      }
 
-    const position = {
+      let type = "Hospital";
 
-      lat: currentLat,
-      lng: currentLng
+      if (place.primaryType === "police") {
+        type = "Police Station";
+      }
 
-    };
+      const marker = new google.maps.Marker({
+        map: map,
 
-    map =
-      new Map(
-        document.getElementById(
-          "map"
-        ),
-        {
+        position: {
+          lat: latitude,
+          lng: longitude
+        },
 
-          center:
-            position,
-
-          zoom:
-            15,
-
-          mapTypeId:
-            "roadmap",
-
-          mapTypeControl:
-            true,
-
-          mapTypeControlOptions: {
-
-            style:
-              google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-
-            position:
-              google.maps.ControlPosition.TOP_RIGHT,
-
-            mapTypeIds: [
-              "roadmap",
-              "satellite"
-            ]
-
-          },
-
-          streetViewControl:
-            false,
-
-          fullscreenControl:
-            false,
-
-          zoomControl:
-            true,
-
-          gestureHandling:
-            "greedy"
-
-        }
-      );
-
-    /* =====================================================
-       CURRENT LOCATION MARKER
-    ===================================================== */
-
-    currentMarker =
-      new google.maps.Marker({
-
-        position:
-          position,
-
-        map:
-          map,
-
-        title:
-          "Your Current Location",
+        title: place.displayName?.text || type,
 
         icon: {
-
           url:
-            "https://maps.google.com/mapfiles/ms/icons/green-dot.png"
-
+            type === "Hospital"
+              ? "https://maps.google.com/mapfiles/ms/icons/red-dot.png"
+              : "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
         }
-
       });
 
-    /* =====================================================
-       FIND REAL SERVICES
-    ===================================================== */
+      serviceMarkers.push(marker);
 
-    findNearbyServices();
+      const infoWindow = new google.maps.InfoWindow({
+        content: \`
+          <div style="min-width:200px;padding:8px;font-family:Arial;">
+            <strong>\${place.displayName?.text || type}</strong>
+            <br/>
+            <span>\${type}</span>
+            <br/>
+            <span>\${distance.toFixed(2)} km away</span>
+            <br/>
+            <small>\${place.formattedAddress || "Address unavailable"}</small>
+          </div>
+        \`
+      });
 
-  } catch (error) {
+      marker.addListener("click", function() {
+        infoWindow.open({
+          map: map,
+          anchor: marker
+        });
+      });
 
-    console.log(
-      "MAP ERROR:",
-      error
-    );
-
-    sendMessage({
-
-      type:
-        "servicesError",
-
-      message:
-        "Google Maps could not be loaded."
-
+      services.push({
+        id: place.id || Math.random().toString(),
+        name: place.displayName?.text || type,
+        type: type,
+        address: place.formattedAddress || "Address unavailable",
+        distance: distance,
+        latitude: latitude,
+        longitude: longitude,
+        googleMapsURI: place.googleMapsURI || ""
+      });
     });
 
-  }
+    services.sort(function(a, b) {
+      return a.distance - b.distance;
+    });
 
+    sendMessage({
+      type: "nearbyServices",
+      services: services
+    });
+  } catch (error) {
+    console.log("GOOGLE PLACES ERROR:", error);
+
+    sendMessage({
+      type: "servicesError",
+      message:
+        "Google Places could not load nearby hospitals and police stations."
+    });
+  }
 }
 
-/* =========================================================
-   UPDATE CURRENT LOCATION
-========================================================= */
+async function initMap() {
+  try {
+    const mapsLibrary =
+      await google.maps.importLibrary("maps");
 
-function updateLocation(
-  latitude,
-  longitude
-) {
+    const Map = mapsLibrary.Map;
 
-  currentLat =
-    latitude;
+    const position = {
+      lat: currentLat,
+      lng: currentLng
+    };
 
-  currentLng =
-    longitude;
+    map = new Map(document.getElementById("map"), {
+      center: position,
+      zoom: 15,
+      mapTypeId: "roadmap",
+      mapTypeControl: true,
 
-  if (
-    !map ||
-    !currentMarker
-  ) {
+      mapTypeControlOptions: {
+        style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+        position: google.maps.ControlPosition.TOP_RIGHT,
+        mapTypeIds: ["roadmap", "satellite"]
+      },
 
+      streetViewControl: false,
+      fullscreenControl: false,
+      zoomControl: true,
+      gestureHandling: "greedy"
+    });
+
+    currentMarker = new google.maps.Marker({
+      position: position,
+      map: map,
+      title: "Your Current Location",
+
+      icon: {
+        url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png"
+      }
+    });
+
+    findNearbyServices();
+  } catch (error) {
+    console.log("MAP ERROR:", error);
+
+    sendMessage({
+      type: "servicesError",
+      message: "Google Maps could not be loaded."
+    });
+  }
+}
+
+function updateLocation(latitude, longitude) {
+  currentLat = latitude;
+  currentLng = longitude;
+
+  if (!map || !currentMarker) {
     return;
-
   }
 
   const position = {
-
-    lat:
-      latitude,
-
-    lng:
-      longitude
-
+    lat: latitude,
+    lng: longitude
   };
 
-  currentMarker.setPosition(
-    position
-  );
-
-  map.setCenter(
-    position
-  );
-
-  /*
-    Automatically search again
-    around new location.
-  */
+  currentMarker.setPosition(position);
+  map.setCenter(position);
 
   findNearbyServices();
-
 }
 
-/* =========================================================
-   FOCUS SERVICE
-========================================================= */
-
-function focusLocation(
-  latitude,
-  longitude
-) {
-
+function focusLocation(latitude, longitude) {
   if (!map) {
     return;
   }
 
   map.setCenter({
-
-    lat:
-      latitude,
-
-    lng:
-      longitude
-
+    lat: latitude,
+    lng: longitude
   });
 
-  map.setZoom(
-    17
-  );
-
+  map.setZoom(17);
 }
 
-/* =========================================================
-   RECEIVE MESSAGE
-========================================================= */
-
-function handleMessage(
-  event
-) {
-
+function handleMessage(event) {
   try {
+    const data = JSON.parse(event.data);
 
-    const data =
-      JSON.parse(
-        event.data
-      );
-
-    /* UPDATE LOCATION */
-
-    if (
-      data.type ===
-      "updateLocation"
-    ) {
-
-      updateLocation(
-        data.latitude,
-        data.longitude
-      );
-
+    if (data.type === "updateLocation") {
+      updateLocation(data.latitude, data.longitude);
     }
 
-    /* VIEW SERVICE ON MAP */
-
-    if (
-      data.type ===
-      "focusLocation"
-    ) {
-
-      focusLocation(
-        data.latitude,
-        data.longitude
-      );
-
+    if (data.type === "focusLocation") {
+      focusLocation(data.latitude, data.longitude);
     }
 
-    /* REFRESH SERVICES */
-
-    if (
-      data.type ===
-      "refreshServices"
-    ) {
-
+    if (data.type === "refreshServices") {
       findNearbyServices();
-
     }
-
   } catch (error) {
-
-    console.log(
-      "WebView message error:",
-      error
-    );
-
+    console.log("WebView message error:", error);
   }
-
 }
 
-/* =========================================================
-   MESSAGE LISTENERS
-========================================================= */
-
-document.addEventListener(
-  "message",
-  handleMessage
-);
-
-window.addEventListener(
-  "message",
-  handleMessage
-);
-
+document.addEventListener("message", handleMessage);
+window.addEventListener("message", handleMessage);
 </script>
 
 <script
@@ -963,21 +603,14 @@ window.addEventListener(
   defer
   src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap">
 </script>
-
 </head>
 
 <body>
-
 <div id="map"></div>
-
 </body>
-
 </html>
 `;
-  }, [
-    location?.latitude,
-    location?.longitude,
-  ]);
+  }, [location?.latitude, location?.longitude]);
 
   /* =========================================================
      FILTER SERVICES
@@ -987,34 +620,21 @@ window.addEventListener(
     selectedFilter === "All"
       ? nearbyServices
       : nearbyServices.filter(
-          (service) =>
-            service.type ===
-            selectedFilter
+          (service) => service.type === selectedFilter
         );
 
   /* =========================================================
      VIEW SERVICE ON MAP
   ========================================================= */
 
-  const viewOnMap = (
-    service: EmergencyService
-  ) => {
-
+  const viewOnMap = (service: EmergencyService) => {
     webViewRef.current?.postMessage(
       JSON.stringify({
-
-        type:
-          "focusLocation",
-
-        latitude:
-          service.latitude,
-
-        longitude:
-          service.longitude,
-
+        type: "focusLocation",
+        latitude: service.latitude,
+        longitude: service.longitude,
       })
     );
-
   };
 
   /* =========================================================
@@ -1022,37 +642,21 @@ window.addEventListener(
   ========================================================= */
 
   const refreshServices = () => {
-
     if (!location) {
-
       Alert.alert(
         "Location Required",
         "Please wait until your current location is available."
       );
-
       return;
-
     }
 
-    setServicesLoading(
-      true
-    );
-
-    /*
-      This now actually calls
-      Google Places Nearby Search
-      inside the WebView.
-    */
+    setServicesLoading(true);
 
     webViewRef.current?.postMessage(
       JSON.stringify({
-
-        type:
-          "refreshServices",
-
+        type: "refreshServices",
       })
     );
-
   };
 
   /* =========================================================
@@ -1060,48 +664,29 @@ window.addEventListener(
   ========================================================= */
 
   const goToMyLocation = () => {
-
     if (!location) {
       return;
     }
 
     webViewRef.current?.postMessage(
       JSON.stringify({
-
-        type:
-          "focusLocation",
-
-        latitude:
-          location.latitude,
-
-        longitude:
-          location.longitude,
-
+        type: "focusLocation",
+        latitude: location.latitude,
+        longitude: location.longitude,
       })
     );
-
   };
 
   /* =========================================================
      FORMAT DISTANCE
   ========================================================= */
 
-  const formatDistance = (
-    distance: number
-  ) => {
-
+  const formatDistance = (distance: number) => {
     if (distance < 1) {
-
-      return `${Math.round(
-        distance * 1000
-      )} m`;
-
+      return `${Math.round(distance * 1000)} m`;
     }
 
-    return `${distance.toFixed(
-      1
-    )} km`;
-
+    return `${distance.toFixed(1)} km`;
   };
 
   /* =========================================================
@@ -1113,150 +698,68 @@ window.addEventListener(
   }: {
     service: EmergencyService;
   }) => {
-
-    const isHospital =
-      service.type ===
-      "Hospital";
+    const isHospital = service.type === "Hospital";
 
     return (
-
-      <View
-        style={
-          styles.serviceCard
-        }
-      >
-
-        {/* ICON */}
-
+      <View style={styles.serviceCard}>
         <View
           style={[
             styles.serviceIcon,
             {
-              backgroundColor:
-                isHospital
-                  ? "rgba(255,77,103,0.12)"
-                  : "rgba(0,212,255,0.12)",
+              backgroundColor: isHospital
+                ? "rgba(255,77,103,0.12)"
+                : "rgba(0,212,255,0.12)",
             },
           ]}
         >
-
           <Ionicons
-            name={
-              isHospital
-                ? "medkit"
-                : "shield-checkmark"
-            }
+            name={isHospital ? "medkit" : "shield-checkmark"}
             size={23}
-            color={
-              isHospital
-                ? "#FF4D67"
-                : "#00D4FF"
-            }
+            color={isHospital ? "#FF4D67" : "#00D4FF"}
           />
-
         </View>
 
-        {/* DETAILS */}
-
-        <View
-          style={
-            styles.serviceDetails
-          }
-        >
-
-          <Text
-            style={
-              styles.serviceName
-            }
-            numberOfLines={1}
-          >
+        <View style={styles.serviceDetails}>
+          <Text style={styles.serviceName} numberOfLines={1}>
             {service.name}
           </Text>
 
           <Text
             style={[
               styles.serviceType,
-              {
-                color:
-                  isHospital
-                    ? "#FF4D67"
-                    : "#00D4FF",
-              },
+              { color: isHospital ? "#FF4D67" : "#00D4FF" },
             ]}
           >
             {service.type}
           </Text>
 
-          <Text
-            style={
-              styles.serviceAddress
-            }
-            numberOfLines={2}
-          >
+          <Text style={styles.serviceAddress} numberOfLines={2}>
             {service.address}
           </Text>
 
-          {/* VIEW MAP */}
-
           <TouchableOpacity
-            style={
-              styles.viewMapButton
-            }
-            onPress={() =>
-              viewOnMap(service)
-            }
+            style={styles.viewMapButton}
+            onPress={() => viewOnMap(service)}
           >
-
-            <Text
-              style={
-                styles.viewMapText
-              }
-            >
-              View on Map
-            </Text>
+            <Text style={styles.viewMapText}>View on Map</Text>
 
             <Ionicons
               name="arrow-forward"
               size={14}
               color="#6C63FF"
             />
-
           </TouchableOpacity>
-
         </View>
 
-        {/* DISTANCE */}
-
-        <View
-          style={
-            styles.distanceBox
-          }
-        >
-
-          <Text
-            style={
-              styles.distance
-            }
-          >
-            {formatDistance(
-              service.distance
-            )}
+        <View style={styles.distanceBox}>
+          <Text style={styles.distance}>
+            {formatDistance(service.distance)}
           </Text>
 
-          <Text
-            style={
-              styles.away
-            }
-          >
-            away
-          </Text>
-
+          <Text style={styles.away}>away</Text>
         </View>
-
       </View>
-
     );
-
   };
 
   /* =========================================================
@@ -1264,798 +767,377 @@ window.addEventListener(
   ========================================================= */
 
   return (
-
-    <SafeAreaView
-      style={
-        styles.container
-      }
-    >
-
+    <SafeAreaView style={styles.container}>
       <StatusBar
         barStyle="light-content"
         backgroundColor="#070B18"
       />
 
       <ScrollView
-        showsVerticalScrollIndicator={
-          false
-        }
-        contentContainerStyle={
-          styles.scrollContent
-        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
+        {/* HEADER */}
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
-
-        <View
-          style={
-            styles.header
-          }
-        >
-
+        <View style={styles.header}>
           <View>
-
-            <Text
-              style={
-                styles.hello
-              }
-            >
+            <Text style={styles.hello}>
               Hello, {touristName} 👋
             </Text>
 
-            <Text
-              style={
-                styles.subtitle
-              }
-            >
+            <Text style={styles.subtitle}>
               Ready for a safe journey?
             </Text>
-
           </View>
 
-          <TouchableOpacity
-            style={
-              styles.notificationButton
-            }
-          >
-
+          <TouchableOpacity style={styles.notificationButton}>
             <Ionicons
               name="notifications-outline"
               size={22}
               color="#FFFFFF"
             />
-
           </TouchableOpacity>
-
         </View>
 
-        {/* =================================================
-            SAFE AREA
-        ================================================= */}
+        {/* SAFE AREA */}
 
-        <View
-          style={
-            styles.safeCard
-          }
-        >
-
-          <View
-            style={
-              styles.safeIcon
-            }
-          >
-
+        <View style={styles.safeCard}>
+          <View style={styles.safeIcon}>
             <Ionicons
               name="shield-checkmark"
               size={23}
               color="#32D583"
             />
-
           </View>
 
-          <View
-            style={
-              styles.safeContent
-            }
-          >
-
-            <Text
-              style={
-                styles.safeTitle
-              }
-            >
+          <View style={styles.safeContent}>
+            <Text style={styles.safeTitle}>
               YOU'RE IN A SAFE AREA
             </Text>
 
-            <Text
-              style={
-                styles.safeSubtitle
-              }
-            >
+            <Text style={styles.safeSubtitle}>
               Location monitoring is active
             </Text>
-
           </View>
 
-          <View
-            style={
-              styles.greenDot
-            }
-          />
-
+          <View style={styles.greenDot} />
         </View>
 
-        {/* =================================================
-            LIVE LOCATION HEADER
-        ================================================= */}
+        {/* LIVE LOCATION HEADER */}
 
-        <View
-          style={
-            styles.sectionHeader
-          }
-        >
-
+        <View style={styles.sectionHeader}>
           <View>
-
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
+            <Text style={styles.sectionTitle}>
               Live Location
             </Text>
 
-            <Text
-              style={
-                styles.sectionSubtitle
-              }
-            >
+            <Text style={styles.sectionSubtitle}>
               Your current location
             </Text>
-
           </View>
 
-          <View
-            style={
-              styles.liveBadge
-            }
-          >
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
 
-            <View
-              style={
-                styles.liveDot
-              }
-            />
-
-            <Text
-              style={
-                styles.liveText
-              }
-            >
-              LIVE
-            </Text>
-
+            <Text style={styles.liveText}>LIVE</Text>
           </View>
-
         </View>
 
-        {/* =================================================
-            MAP
-        ================================================= */}
+        {/* MAP */}
 
-        <View
-          style={
-            styles.mapContainer
-          }
-        >
-
+        <View style={styles.mapContainer}>
           {locationLoading ? (
-
-            <View
-              style={
-                styles.mapLoading
-              }
-            >
-
+            <View style={styles.mapLoading}>
               <ActivityIndicator
                 size="large"
                 color="#6C63FF"
               />
 
-              <Text
-                style={
-                  styles.loadingText
-                }
-              >
+              <Text style={styles.loadingText}>
                 Getting your location...
               </Text>
-
             </View>
-
           ) : location ? (
-
             <WebView
-              ref={
-                webViewRef
-              }
-              source={{
-                html:
-                  mapHTML,
-              }}
-              originWhitelist={[
-                "*",
-              ]}
+              ref={webViewRef}
+              source={{ html: mapHTML }}
+              originWhitelist={["*"]}
               javaScriptEnabled
               domStorageEnabled
               geolocationEnabled
               startInLoadingState
-              style={
-                styles.webview
-              }
-              onMessage={(
-                event: WebViewMessageEvent
-              ) => {
-
+              style={styles.webview}
+              onMessage={(event: WebViewMessageEvent) => {
                 try {
+                  const data = JSON.parse(
+                    event.nativeEvent.data
+                  );
 
-                  const data =
-                    JSON.parse(
-                      event
-                        .nativeEvent
-                        .data
-                    );
-
-                  /* =====================================
-                     SERVICES LOADING
-                  ===================================== */
-
-                  if (
-                    data.type ===
-                    "servicesLoading"
-                  ) {
-
-                    setServicesLoading(
-                      true
-                    );
-
+                  if (data.type === "servicesLoading") {
+                    setServicesLoading(true);
                     return;
-
                   }
 
-                  /* =====================================
-                     SERVICES RECEIVED
-                  ===================================== */
-
-                  if (
-                    data.type ===
-                    "nearbyServices"
-                  ) {
-
-                    setServicesLoading(
-                      false
-                    );
-
-                    setNearbyServices(
-                      data.services ||
-                        []
-                    );
-
+                  if (data.type === "nearbyServices") {
+                    setServicesLoading(false);
+                    setNearbyServices(data.services || []);
                     return;
-
                   }
 
-                  /* =====================================
-                     SERVICES ERROR
-                  ===================================== */
-
-                  if (
-                    data.type ===
-                    "servicesError"
-                  ) {
-
-                    setServicesLoading(
-                      false
-                    );
-
-                    setNearbyServices(
-                      []
-                    );
+                  if (data.type === "servicesError") {
+                    setServicesLoading(false);
+                    setNearbyServices([]);
 
                     Alert.alert(
                       "Nearby Services",
                       data.message ||
                         "Unable to load nearby services."
                     );
-
                     return;
-
                   }
-
                 } catch (error) {
-
                   console.log(
                     "Message parsing error:",
                     error
                   );
-
                 }
-
               }}
             />
-
           ) : (
-
-            <View
-              style={
-                styles.mapLoading
-              }
-            >
-
+            <View style={styles.mapLoading}>
               <Ionicons
                 name="location-outline"
                 size={40}
                 color="#FF4D67"
               />
 
-              <Text
-                style={
-                  styles.loadingText
-                }
-              >
+              <Text style={styles.loadingText}>
                 Location unavailable
               </Text>
-
             </View>
-
           )}
 
-          {/* MY LOCATION BUTTON */}
-
           <TouchableOpacity
-            style={
-              styles.myLocationButton
-            }
-            onPress={
-              goToMyLocation
-            }
+            style={styles.myLocationButton}
+            onPress={goToMyLocation}
           >
-
             <Ionicons
               name="locate"
               size={23}
               color="#FFFFFF"
             />
-
           </TouchableOpacity>
-
         </View>
 
-        {/* =================================================
-            CURRENT LOCATION
-        ================================================= */}
+        {/* CURRENT LOCATION */}
 
         {location && (
-
-          <View
-            style={
-              styles.currentLocationCard
-            }
-          >
-
-            <View
-              style={
-                styles.locationIcon
-              }
-            >
-
+          <View style={styles.currentLocationCard}>
+            <View style={styles.locationIcon}>
               <Ionicons
                 name="location"
                 size={21}
                 color="#00D4FF"
               />
-
             </View>
 
-            <View
-              style={
-                styles.locationInfo
-              }
-            >
-
-              <Text
-                style={
-                  styles.locationTitle
-                }
-              >
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationTitle}>
                 Current Location
               </Text>
 
-              <Text
-                style={
-                  styles.areaName
-                }
-                numberOfLines={1}
-              >
-                {location.area},{" "}
-                {location.city}
+              <Text style={styles.areaName} numberOfLines={1}>
+                {location.area}, {location.city}
               </Text>
 
-              <Text
-                style={
-                  styles.coordinates
-                }
-              >
-                {location.latitude.toFixed(
-                  5
-                )}
-                ,{" "}
-                {location.longitude.toFixed(
-                  5
-                )}
+              <Text style={styles.coordinates}>
+                {location.latitude.toFixed(5)},{" "}
+                {location.longitude.toFixed(5)}
               </Text>
 
-              <Text
-                style={
-                  styles.updated
-                }
-              >
+              <Text style={styles.updated}>
                 Updated just now
               </Text>
-
             </View>
-
           </View>
-
         )}
 
-        {/* =================================================
-            NEARBY SERVICES HEADER
-        ================================================= */}
+        {/* NEARBY SERVICES HEADER */}
 
         <View
           style={[
             styles.sectionHeader,
-            {
-              marginTop: 25,
-            },
+            { marginTop: 25 },
           ]}
         >
-
           <View>
-
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
+            <Text style={styles.sectionTitle}>
               Nearby Emergency Services
             </Text>
 
-            <Text
-              style={
-                styles.sectionSubtitle
-              }
-            >
+            <Text style={styles.sectionSubtitle}>
               Hospitals & police near you
             </Text>
-
           </View>
 
-          <View
-            style={
-              styles.kmBadge
-            }
-          >
-
+          <View style={styles.kmBadge}>
             <Ionicons
               name="navigate-outline"
               size={14}
               color="#00D4FF"
             />
 
-            <Text
-              style={
-                styles.kmText
-              }
-            >
-              2 KM
-            </Text>
-
+            <Text style={styles.kmText}>2 KM</Text>
           </View>
-
         </View>
 
-        {/* =================================================
-            FILTER
-        ================================================= */}
+        {/* FILTER */}
 
-        <View
-          style={
-            styles.filterContainer
-          }
-        >
-
-          {/* ALL */}
-
+        <View style={styles.filterContainer}>
           <TouchableOpacity
             style={[
               styles.filterButton,
-              selectedFilter ===
-                "All" &&
-                styles.activeFilter,
+              selectedFilter === "All" && styles.activeFilter,
             ]}
-            onPress={() =>
-              setSelectedFilter(
-                "All"
-              )
-            }
+            onPress={() => setSelectedFilter("All")}
           >
-
             <Text
               style={[
                 styles.filterText,
-                selectedFilter ===
-                  "All" &&
+                selectedFilter === "All" &&
                   styles.activeFilterText,
               ]}
             >
               All
             </Text>
-
           </TouchableOpacity>
-
-          {/* HOSPITAL */}
 
           <TouchableOpacity
             style={[
               styles.filterButton,
-              selectedFilter ===
-                "Hospital" &&
+              selectedFilter === "Hospital" &&
                 styles.activeFilter,
             ]}
-            onPress={() =>
-              setSelectedFilter(
-                "Hospital"
-              )
-            }
+            onPress={() => setSelectedFilter("Hospital")}
           >
-
             <Text
               style={[
                 styles.filterText,
-                selectedFilter ===
-                  "Hospital" &&
+                selectedFilter === "Hospital" &&
                   styles.activeFilterText,
               ]}
             >
               🏥 Hospitals
             </Text>
-
           </TouchableOpacity>
-
-          {/* POLICE */}
 
           <TouchableOpacity
             style={[
               styles.filterButton,
-              selectedFilter ===
-                "Police Station" &&
+              selectedFilter === "Police Station" &&
                 styles.activeFilter,
             ]}
-            onPress={() =>
-              setSelectedFilter(
-                "Police Station"
-              )
-            }
+            onPress={() => setSelectedFilter("Police Station")}
           >
-
             <Text
               style={[
                 styles.filterText,
-                selectedFilter ===
-                  "Police Station" &&
+                selectedFilter === "Police Station" &&
                   styles.activeFilterText,
               ]}
             >
               👮 Police
             </Text>
-
           </TouchableOpacity>
-
         </View>
 
-        {/* =================================================
-            SERVICES LOADING
-        ================================================= */}
+        {/* SERVICES LOADING / LIST / EMPTY STATE */}
 
         {servicesLoading ? (
-
-          <View
-            style={
-              styles.loadingServices
-            }
-          >
-
+          <View style={styles.loadingServices}>
             <ActivityIndicator
               size="small"
               color="#6C63FF"
             />
 
-            <Text
-              style={
-                styles.serviceLoadingText
-              }
-            >
+            <Text style={styles.serviceLoadingText}>
               Finding nearby services...
             </Text>
-
           </View>
-
-        ) : filteredServices.length >
-          0 ? (
-
-          /* =================================================
-             SERVICE LIST
-          ================================================= */
-
-          <View
-            style={
-              styles.serviceList
-            }
-          >
-
-            {filteredServices.map(
-              (service) => (
-
-                <ServiceCard
-                  key={
-                    service.id
-                  }
-                  service={
-                    service
-                  }
-                />
-
-              )
-            )}
-
+        ) : filteredServices.length > 0 ? (
+          <View style={styles.serviceList}>
+            {filteredServices.map((service) => (
+              <ServiceCard
+                key={service.id}
+                service={service}
+              />
+            ))}
           </View>
-
         ) : (
-
-          <View
-            style={
-              styles.noServices
-            }
-          >
-
+          <View style={styles.noServices}>
             <Ionicons
               name="search-outline"
               size={30}
               color="#6C63FF"
             />
 
-            <Text
-              style={
-                styles.noServicesTitle
-              }
-            >
+            <Text style={styles.noServicesTitle}>
               No services found
             </Text>
 
-            <Text
-              style={
-                styles.noServicesText
-              }
-            >
+            <Text style={styles.noServicesText}>
               No{" "}
-              {selectedFilter ===
-              "All"
+              {selectedFilter === "All"
                 ? "hospital or police station"
                 : selectedFilter.toLowerCase()}{" "}
               found within 2 km.
             </Text>
-
           </View>
-
         )}
 
-        {/* =================================================
-            REFRESH
-        ================================================= */}
+        {/* REFRESH */}
 
         <TouchableOpacity
-          style={
-            styles.refreshButton
-          }
-          onPress={
-            refreshServices
-          }
+          style={styles.refreshButton}
+          onPress={refreshServices}
         >
-
           <Ionicons
             name="refresh-outline"
             size={18}
             color="#8D99AE"
           />
 
-          <Text
-            style={
-              styles.refreshText
-            }
-          >
+          <Text style={styles.refreshText}>
             Refresh Nearby Services
           </Text>
-
         </TouchableOpacity>
 
-        {/* =================================================
-            MONITORING
-        ================================================= */}
+        {/* MONITORING */}
 
-        <View
-          style={
-            styles.monitoringCard
-          }
-        >
-
-          <View
-            style={
-              styles.monitoringIcon
-            }
-          >
-
+        <View style={styles.monitoringCard}>
+          <View style={styles.monitoringIcon}>
             <Ionicons
               name="location"
               size={18}
               color="#32D583"
             />
-
           </View>
 
-          <View
-            style={
-              styles.monitoringInfo
-            }
-          >
-
-            <Text
-              style={
-                styles.monitoringTitle
-              }
-            >
+          <View style={styles.monitoringInfo}>
+            <Text style={styles.monitoringTitle}>
               Location is being monitored
             </Text>
 
-            <Text
-              style={
-                styles.monitoringText
-              }
-            >
-              Your current location updates
-              automatically.
+            <Text style={styles.monitoringText}>
+              Your current location updates automatically.
             </Text>
-
           </View>
 
-          <View
-            style={
-              styles.monitoringDot
-            }
-          />
-
+          <View style={styles.monitoringDot} />
         </View>
 
-        <View
-          style={
-            styles.bottomSpace
-          }
-        />
-
+        <View style={styles.bottomSpace} />
       </ScrollView>
-
     </SafeAreaView>
   );
 }
@@ -2065,7 +1147,6 @@ window.addEventListener(
 ========================================================= */
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
     backgroundColor: "#070B18",
@@ -2076,8 +1157,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 30,
   },
-
-  /* HEADER */
 
   header: {
     flexDirection: "row",
@@ -2109,15 +1188,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  /* SAFE */
-
   safeCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#0D1628",
     borderWidth: 1,
-    borderColor:
-      "rgba(50,213,131,0.25)",
+    borderColor: "rgba(50,213,131,0.25)",
     borderRadius: 18,
     padding: 15,
     marginBottom: 22,
@@ -2127,8 +1203,7 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 14,
-    backgroundColor:
-      "rgba(50,213,131,0.10)",
+    backgroundColor: "rgba(50,213,131,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2157,8 +1232,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#32D583",
   },
 
-  /* SECTION */
-
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2178,13 +1251,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  /* LIVE */
-
   liveBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor:
-      "rgba(50,213,131,0.10)",
+    backgroundColor: "rgba(50,213,131,0.10)",
     borderRadius: 10,
     paddingHorizontal: 9,
     paddingVertical: 6,
@@ -2203,8 +1273,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
-
-  /* MAP */
 
   mapContainer: {
     height: 300,
@@ -2248,8 +1316,6 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 
-  /* CURRENT LOCATION */
-
   currentLocationCard: {
     flexDirection: "row",
     backgroundColor: "#0D1628",
@@ -2264,8 +1330,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 13,
-    backgroundColor:
-      "rgba(0,212,255,0.10)",
+    backgroundColor: "rgba(0,212,255,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2300,16 +1365,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  /* KM */
-
   kmBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor:
-      "rgba(0,212,255,0.08)",
+    backgroundColor: "rgba(0,212,255,0.08)",
     borderWidth: 1,
-    borderColor:
-      "rgba(0,212,255,0.18)",
+    borderColor: "rgba(0,212,255,0.18)",
     paddingHorizontal: 9,
     paddingVertical: 6,
     borderRadius: 10,
@@ -2321,8 +1382,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginLeft: 4,
   },
-
-  /* FILTER */
 
   filterContainer: {
     flexDirection: "row",
@@ -2355,8 +1414,6 @@ const styles = StyleSheet.create({
   activeFilterText: {
     color: "#FFFFFF",
   },
-
-  /* SERVICES */
 
   serviceList: {
     gap: 10,
@@ -2434,8 +1491,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* LOADING */
-
   loadingServices: {
     backgroundColor: "#0D1628",
     borderWidth: 1,
@@ -2452,8 +1507,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 9,
   },
-
-  /* NO SERVICES */
 
   noServices: {
     backgroundColor: "#0D1628",
@@ -2479,8 +1532,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  /* REFRESH */
-
   refreshButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -2495,16 +1546,12 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  /* MONITORING */
-
   monitoringCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor:
-      "rgba(50,213,131,0.06)",
+    backgroundColor: "rgba(50,213,131,0.06)",
     borderWidth: 1,
-    borderColor:
-      "rgba(50,213,131,0.15)",
+    borderColor: "rgba(50,213,131,0.15)",
     borderRadius: 16,
     padding: 13,
   },
@@ -2513,8 +1560,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor:
-      "rgba(50,213,131,0.10)",
+    backgroundColor: "rgba(50,213,131,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2546,5 +1592,4 @@ const styles = StyleSheet.create({
   bottomSpace: {
     height: 30,
   },
-
 });
