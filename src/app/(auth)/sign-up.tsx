@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import {
   View,
@@ -31,6 +32,7 @@ type DemoAccount = {
 };
 
 const STORAGE_KEY = "safeTourismDemoAccounts";
+const API_BASE_URL = "http://192.168.1.35:5001/api";
 
 const TOURIST_ROUTE = "/(drawer)";
 const AGENT_ROUTE = "/(agent)";
@@ -59,238 +61,347 @@ export default function SignUpScreen() {
   const [agentId, setAgentId] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSignUp = async () => {
-    if (loading) return;
+  // Email OTP verification states
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState("");
 
-    const cleanName = name.trim();
-    const normalizedEmail = normalizeEmail(email);
-    const normalizedPhone = normalizePhone(phone);
-    const normalizedAgentId = normalizeAgentId(agentId);
+  const currentEmail = normalizeEmail(email);
+  const isCurrentEmailVerified =
+    emailVerified && verifiedEmail === currentEmail;
 
-    if (
-      !cleanName ||
-      !normalizedEmail ||
-      !normalizedPhone ||
-      !password ||
-      !confirmPassword
-    ) {
-      Alert.alert(
-        "Missing Details",
-        "Please fill in all required fields."
-      );
-      return;
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+
+    // If the email changes, require verification again.
+    if (normalizeEmail(value) !== verifiedEmail) {
+      setEmailVerified(false);
+      setVerifiedEmail("");
+      setOtpSent(false);
+      setOtp("");
     }
+  };
+
+  const handleSendOtp = async () => {
+    const normalizedEmail = normalizeEmail(email);
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      Alert.alert(
-        "Invalid Email",
-        "Please enter a valid email address."
-      );
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
       return;
     }
 
-    if (!/^\d{10}$/.test(normalizedPhone)) {
-      Alert.alert(
-        "Invalid Phone",
-        "Enter a valid 10-digit mobile number."
-      );
-      return;
-    }
-
-    if (password.length < 8) {
-      Alert.alert(
-        "Weak Password",
-        "Password must contain at least 8 characters."
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert(
-        "Password Mismatch",
-        "Passwords do not match."
-      );
-      return;
-    }
-
-    if (
-      role === "Agent" &&
-      (!hotelName.trim() ||
-        !hotelAddress.trim() ||
-        !normalizedAgentId)
-    ) {
-      Alert.alert(
-        "Agent Details Required",
-        "Please enter hotel name, address and Agent ID."
-      );
-      return;
-    }
-
-    setLoading(true);
+    if (loading) return;
 
     try {
-      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
+      setLoading(true);
 
-      let accounts: DemoAccount[] = [];
+      const response = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+        }),
+      });
 
-      if (storedData) {
-        const parsedData: unknown = JSON.parse(storedData);
+      const data = await response.json();
 
-        if (!Array.isArray(parsedData)) {
-          throw new Error(
-            "Saved account data is not in the expected format."
-          );
-        }
-
-        // Support existing saved accounts.
-        accounts = parsedData.map((item: any) => ({
-          name: String(item?.name ?? ""),
-          email: String(item?.email ?? ""),
-          phone: String(item?.phone ?? ""),
-          password: String(item?.password ?? ""),
-          role:
-            String(item?.role ?? "").toLowerCase() === "agent"
-              ? "agent"
-              : "tourist",
-          hotelName: String(item?.hotelName ?? ""),
-          hotelAddress: String(item?.hotelAddress ?? ""),
-          agentId: String(item?.agentId ?? ""),
-          verificationStatus:
-            item?.verificationStatus === "not_required" ||
-            String(item?.role ?? "").toLowerCase() === "tourist"
-              ? "not_required"
-              : "pending",
-        }));
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Unable to send OTP.");
       }
 
-      // Check whether the email already exists.
-      const emailExists = accounts.some(
-        (account) =>
-          normalizeEmail(account.email) === normalizedEmail
-      );
-
-      if (emailExists) {
-        Alert.alert(
-          "Account Already Exists",
-          "This email is already registered. Please sign in or use another email."
-        );
-        return;
-      }
-
-      // Check whether the phone number already exists.
-      const phoneExists = accounts.some(
-        (account) =>
-          normalizePhone(account.phone) === normalizedPhone
-      );
-
-      if (phoneExists) {
-        Alert.alert(
-          "Phone Already Registered",
-          "This mobile number is already registered. Please sign in or use another number."
-        );
-        return;
-      }
-
-      // Agent ID uniqueness check applies only to Agents.
-      if (role === "Agent") {
-        const duplicateAgent = accounts.find(
-          (account) =>
-            account.role === "agent" &&
-            normalizeAgentId(account.agentId) === normalizedAgentId
-        );
-
-        if (duplicateAgent) {
-          Alert.alert(
-            "Agent ID Already Exists",
-            `The Agent ID "${normalizedAgentId}" is already saved for an Agent account.\n\nPlease enter a different Agent ID.`
-          );
-          return;
-        }
-      }
-
-      const newAccount: DemoAccount = {
-        name: cleanName,
-        email: normalizedEmail,
-        phone: normalizedPhone,
-        password,
-        role: role.toLowerCase() as "tourist" | "agent",
-        hotelName: role === "Agent" ? hotelName.trim() : "",
-        hotelAddress: role === "Agent" ? hotelAddress.trim() : "",
-        agentId: role === "Agent" ? normalizedAgentId : "",
-        verificationStatus:
-          role === "Agent" ? "pending" : "not_required",
-      };
-
-      // Save the account without deleting any existing accounts.
-      const updatedAccounts = [...accounts, newAccount];
-
-      await AsyncStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(updatedAccounts)
-      );
-
-      if (role === "Agent") {
-        // KEEP EXISTING AGENT FLOW.
-        await AsyncStorage.setItem(
-          "safeTourismCurrentUser",
-          JSON.stringify({
-            name: newAccount.name,
-            email: newAccount.email,
-            phone: newAccount.phone,
-            role: newAccount.role,
-            hotelName: newAccount.hotelName,
-            hotelAddress: newAccount.hotelAddress,
-            agentId: newAccount.agentId,
-            verificationStatus: newAccount.verificationStatus,
-          })
-        );
-
-        Alert.alert(
-          "Registration Successful",
-          "Your demo Agent account has been created. Agent verification is still pending.",
-          [
-            {
-              text: "Continue",
-              onPress: () => {
-                router.replace(AGENT_ROUTE as any);
-              },
-            },
-          ]
-        );
-      } else {
-        // TOURIST FLOW:
-        // Save the account, but do not automatically sign the Tourist in.
-        // Sign In will establish the active user after password verification.
-        await AsyncStorage.removeItem("safeTourismCurrentUser");
-
-        Alert.alert(
-          "Registration Successful",
-          "Your Tourist account has been created. Please sign in using your registered email and password.",
-          [
-            {
-              text: "Continue",
-              onPress: () => {
-                router.replace(SIGN_IN_ROUTE as any);
-              },
-            },
-          ]
-        );
-      }
-    } catch (error) {
-      console.error("Signup error:", error);
+      setOtpSent(true);
+      setEmailVerified(false);
+      setVerifiedEmail("");
+      setOtp("");
 
       Alert.alert(
-        "Signup Failed",
-        "Could not save your account. Please try again."
+        "OTP Sent",
+        `A verification code has been sent to ${normalizedEmail}. Check your inbox.`
+      );
+    } catch (error) {
+      Alert.alert(
+        "OTP Error",
+        error instanceof Error
+          ? `${error.message}\n\nCheck that your Mac and phone are on the same Wi-Fi and the backend is running.`
+          : "Could not connect to the backend."
       );
     } finally {
       setLoading(false);
     }
   };
+
+  const handleVerifyOtp = async () => {
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!otpSent) {
+      Alert.alert("OTP Required", "Please request an OTP first.");
+      return;
+    }
+
+    if (!/^\d{6}$/.test(otp.trim())) {
+      Alert.alert("Invalid OTP", "Enter the 6-digit OTP received by email.");
+      return;
+    }
+
+    if (loading) return;
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          otp: otp.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "OTP verification failed.");
+      }
+
+      setEmailVerified(true);
+      setVerifiedEmail(normalizedEmail);
+
+      Alert.alert(
+        "Email Verified",
+        "Your email address has been verified successfully."
+      );
+    } catch (error) {
+      Alert.alert(
+        "Verification Failed",
+        error instanceof Error ? error.message : "Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  
+const handleSignUp = async () => {
+  if (loading) return;
+
+  const cleanName = name.trim();
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedAgentId = normalizeAgentId(agentId);
+
+  if (
+    !cleanName ||
+    !normalizedEmail ||
+    !normalizedPhone ||
+    !password ||
+    !confirmPassword
+  ) {
+    Alert.alert("Missing Details", "Please fill in all required fields.");
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    Alert.alert("Invalid Email", "Please enter a valid email address.");
+    return;
+  }
+
+  if (!isCurrentEmailVerified) {
+    Alert.alert(
+      "Email Not Verified",
+      "Please verify your current email address before creating your account."
+    );
+    return;
+  }
+
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    Alert.alert("Invalid Phone", "Enter a valid 10-digit mobile number.");
+    return;
+  }
+
+  if (password.length < 8) {
+    Alert.alert("Weak Password", "Password must contain at least 8 characters.");
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    Alert.alert("Password Mismatch", "Passwords do not match.");
+    return;
+  }
+
+  if (
+    role === "Agent" &&
+    (!hotelName.trim() || !hotelAddress.trim() || !normalizedAgentId)
+  ) {
+    Alert.alert(
+      "Agent Details Required",
+      "Please enter hotel name, address and Agent ID."
+    );
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // Load existing local records without blocking signup because of them.
+    const storedData = await AsyncStorage.getItem(STORAGE_KEY);
+    let accounts: DemoAccount[] = [];
+
+    if (storedData) {
+      const parsedData: unknown = JSON.parse(storedData);
+
+      if (!Array.isArray(parsedData)) {
+        throw new Error(
+          "Saved account data is not in the expected format."
+        );
+      }
+
+      accounts = parsedData.map((item: any) => ({
+        name: String(item?.name ?? ""),
+        email: String(item?.email ?? ""),
+        phone: String(item?.phone ?? ""),
+        password: String(item?.password ?? ""),
+        role:
+          String(item?.role ?? "").toLowerCase() === "agent"
+            ? "agent"
+            : "tourist",
+        hotelName: String(item?.hotelName ?? ""),
+        hotelAddress: String(item?.hotelAddress ?? ""),
+        agentId: String(item?.agentId ?? ""),
+        verificationStatus:
+          item?.verificationStatus === "not_required" ||
+          String(item?.role ?? "").toLowerCase() === "tourist"
+            ? "not_required"
+            : "pending",
+      }));
+    }
+
+    // MongoDB backend is responsible for checking whether an account
+    // already exists. Do not block signup using old local records.
+    
+const signupPayload = {
+  name: cleanName,
+  email: normalizedEmail,
+  phone: normalizedPhone,
+  password,
+  role,
+  ...(role === "Agent"
+    ? {
+        hotelName: hotelName.trim(),
+        hotelAddress: hotelAddress.trim(),
+        agentId: normalizedAgentId,
+        agentVerificationCode: "AGT-PAN-2048",
+      }
+    : {}),
+};
+
+
+    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(signupPayload),
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok || !responseData.success) {
+      throw new Error(
+        responseData.message || "Unable to create your account."
+      );
+    }
+
+    const newAccount: DemoAccount = {
+      name: cleanName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      password,
+      role: role.toLowerCase() as "tourist" | "agent",
+      hotelName: role === "Agent" ? hotelName.trim() : "",
+      hotelAddress: role === "Agent" ? hotelAddress.trim() : "",
+      agentId: role === "Agent" ? normalizedAgentId : "",
+      verificationStatus:
+        role === "Agent" ? "pending" : "not_required",
+    };
+
+    // Replace the same email's local entry, if one exists.
+    // Preserve all other locally saved accounts.
+    const updatedAccounts = [
+      ...accounts.filter(
+        (account) => normalizeEmail(account.email) !== normalizedEmail
+      ),
+      newAccount,
+    ];
+
+    await AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(updatedAccounts)
+    );
+
+    if (role === "Agent") {
+      await AsyncStorage.setItem(
+        "safeTourismCurrentUser",
+        JSON.stringify({
+          name: newAccount.name,
+          email: newAccount.email,
+          phone: newAccount.phone,
+          role: newAccount.role,
+          hotelName: newAccount.hotelName,
+          hotelAddress: newAccount.hotelAddress,
+          agentId: newAccount.agentId,
+          verificationStatus: newAccount.verificationStatus,
+        })
+      );
+
+      await AsyncStorage.setItem("touristName", newAccount.name);
+      await AsyncStorage.setItem("touristPhone", newAccount.phone);
+
+      Alert.alert(
+        "Registration Successful",
+        "Your Agent account has been created. Agent verification is still pending.",
+        [
+          {
+            text: "Continue",
+            onPress: () => router.replace(AGENT_ROUTE as any),
+          },
+        ]
+      );
+    } else {
+      await AsyncStorage.removeItem("safeTourismCurrentUser");
+
+      Alert.alert(
+        "Registration Successful",
+        "Your Tourist account has been created. Please sign in using your registered email and password.",
+        [
+          {
+            text: "Continue",
+            onPress: () => router.replace(SIGN_IN_ROUTE as any),
+          },
+        ]
+      );
+    }
+  } catch (error) {
+    console.error("Signup error:", error);
+
+    Alert.alert(
+      "Signup Failed",
+      error instanceof Error
+        ? error.message
+        : "Could not create your account. Please try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const renderInput = (
     label: string,
@@ -341,11 +452,7 @@ export default function SignUpScreen() {
               style={styles.backButton}
               onPress={() => router.replace(SIGN_IN_ROUTE as any)}
             >
-              <Ionicons
-                name="arrow-back"
-                size={22}
-                color="#FFFFFF"
-              />
+              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
             </TouchableOpacity>
 
             <View style={styles.logoCircle}>
@@ -445,13 +552,96 @@ export default function SignUpScreen() {
             "EMAIL ADDRESS *",
             "Enter your email",
             email,
-            setEmail,
+            handleEmailChange,
             "mail-outline",
             {
               keyboardType: "email-address",
               autoCapitalize: "none",
             }
           )}
+
+          {/* Email OTP verification */}
+          <View style={styles.verificationBox}>
+            <View style={styles.verificationHeader}>
+              <Ionicons
+                name={
+                  isCurrentEmailVerified
+                    ? "checkmark-circle"
+                    : "mail-outline"
+                }
+                size={21}
+                color={isCurrentEmailVerified ? "#34D399" : "#00D4FF"}
+              />
+
+              <Text style={styles.verificationTitle}>
+                Email Verification
+              </Text>
+
+              {isCurrentEmailVerified && (
+                <Text style={styles.verifiedBadge}>VERIFIED</Text>
+              )}
+            </View>
+
+            <Text style={styles.verificationDescription}>
+              Verify your email address using the OTP sent to your inbox.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.otpButton,
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handleSendOtp}
+              disabled={loading || isCurrentEmailVerified}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color="#00D4FF" />
+              ) : (
+                <Text style={styles.otpButtonText}>
+                  {isCurrentEmailVerified
+                    ? "Email Verified"
+                    : otpSent
+                    ? "Resend OTP"
+                    : "Send Email OTP"}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {otpSent && !isCurrentEmailVerified && (
+              <>
+                <TextInput
+                  style={styles.otpInput}
+                  placeholder="Enter 6-digit OTP"
+                  placeholderTextColor="#707B90"
+                  keyboardType="number-pad"
+                  value={otp}
+                  onChangeText={(value) =>
+                    setOtp(value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  maxLength={6}
+                />
+
+                <TouchableOpacity
+                  style={[
+                    styles.verifyButton,
+                    loading && styles.buttonDisabled,
+                  ]}
+                  onPress={handleVerifyOtp}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.verifyButtonText}>
+                      Verify OTP
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
 
           {renderInput(
             "MOBILE NUMBER *",
@@ -796,6 +986,85 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     paddingVertical: 13,
+  },
+
+  verificationBox: {
+    marginTop: 14,
+    marginBottom: 5,
+    padding: 14,
+    backgroundColor: "#10182A",
+    borderWidth: 1,
+    borderColor: "#273B55",
+    borderRadius: 14,
+  },
+
+  verificationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  verificationTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  verifiedBadge: {
+    color: "#34D399",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  verificationDescription: {
+    color: "#9BA6BB",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+
+  otpButton: {
+    backgroundColor: "#142A40",
+    borderWidth: 1,
+    borderColor: "#00A8D0",
+    borderRadius: 11,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+
+  otpButtonText: {
+    color: "#00D4FF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  otpInput: {
+    marginTop: 12,
+    backgroundColor: "#080D1B",
+    borderWidth: 1,
+    borderColor: "#27334A",
+    borderRadius: 11,
+    color: "#FFFFFF",
+    padding: 13,
+    textAlign: "center",
+    fontSize: 18,
+    letterSpacing: 6,
+  },
+
+  verifyButton: {
+    marginTop: 10,
+    backgroundColor: "#167D68",
+    borderRadius: 11,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+
+  verifyButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 13,
   },
 
   agentSection: {

@@ -1,4 +1,3 @@
-
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
@@ -19,20 +18,27 @@ import {
 
 type UserRole = "Tourist" | "Agent";
 
-type DemoAccount = {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  role: "tourist" | "agent";
-  hotelName: string;
-  hotelAddress: string;
-  agentId: string;
-  verificationStatus: "pending" | "not_required";
+type AccountUser = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  hotelName?: string;
+  hotelAddress?: string;
+  agentId?: string;
+  verificationStatus?: string;
 };
 
-const STORAGE_KEY = "safeTourismDemoAccounts";
+const API_BASE_URL = "http://192.168.1.35:5001/api";
 const AGENT_VERIFICATION_CODE = "AGENT2026";
+
+const normalizeEmail = (value: string) =>
+  value.trim().toLowerCase();
+
+const normalizeAgentId = (value: string) =>
+  value.trim().replace(/\s+/g, "").toUpperCase();
 
 export default function SignInScreen() {
   const [role, setRole] = useState<UserRole>("Tourist");
@@ -46,15 +52,24 @@ export default function SignInScreen() {
   const handleSignIn = async () => {
     if (loading) return;
 
-    const cleanIdentifier = identifier.trim().toLowerCase();
+    const email = normalizeEmail(identifier);
     const cleanPassword = password;
-    const enteredAgentId = agentId.trim().replace(/\s+/g, "").toUpperCase();
-    const enteredVerificationCode = verificationCode.trim().toUpperCase();
+    const enteredAgentId = normalizeAgentId(agentId);
+    const enteredVerificationCode =
+      verificationCode.trim().toUpperCase();
 
-    if (!cleanIdentifier || !cleanPassword) {
+    if (!email || !cleanPassword) {
       Alert.alert(
         "Missing Details",
-        "Please enter your email or phone number and password."
+        "Please enter your registered email and password."
+      );
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Alert.alert(
+        "Invalid Email",
+        "Please enter a valid registered email address."
       );
       return;
     }
@@ -68,10 +83,12 @@ export default function SignInScreen() {
         return;
       }
 
-      if (enteredVerificationCode !== AGENT_VERIFICATION_CODE) {
+      if (
+        enteredVerificationCode !== AGENT_VERIFICATION_CODE
+      ) {
         Alert.alert(
           "Verification Failed",
-          "The verification code is incorrect. Please check it and try again."
+          "The Agent verification code is incorrect."
         );
         return;
       }
@@ -80,56 +97,79 @@ export default function SignInScreen() {
     setLoading(true);
 
     try {
-      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
-      const parsedData: unknown = storedData ? JSON.parse(storedData) : [];
+      const response = await fetch(
+        `${API_BASE_URL}/auth/signin`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password: cleanPassword,
+            role: role.toLowerCase(),
+          }),
+        }
+      );
 
-      if (!Array.isArray(parsedData)) {
+      const result = await response.json();
+
+      if (!response.ok || result.success === false) {
         Alert.alert(
           "Sign In Failed",
-          "Saved account data could not be read. Please try again."
+          result.message ||
+            "Unable to sign in. Please check your email and password."
         );
         return;
       }
 
-      const accounts = parsedData as DemoAccount[];
+      const user: AccountUser =
+        result.user ??
+        result.data?.user ??
+        result.data ??
+        {};
 
-      const digitsOnly = (value: unknown) =>
-        String(value ?? "").replace(/\D/g, "");
+      const token: string | undefined =
+        result.token ?? result.data?.token;
 
-      const enteredPhone = digitsOnly(identifier);
-
-      const account = accounts.find((item) => {
-        const savedEmail = String(item?.email ?? "")
-          .trim()
-          .toLowerCase();
-
-        const savedPhone = digitsOnly(item?.phone);
-
-        return (
-          savedEmail === cleanIdentifier ||
-          (enteredPhone.length > 0 && savedPhone === enteredPhone)
-        );
-      });
-
-      if (!account) {
+      if (!user.email) {
         Alert.alert(
-          "Account Not Found",
-          "No account was found with these details. Please sign up first."
+          "Sign In Failed",
+          "The server did not return your account details. Please check the backend sign-in response."
         );
         return;
       }
 
-      if (String(account.password ?? "") !== cleanPassword) {
+      const savedEmail = normalizeEmail(user.email);
+
+      if (savedEmail !== email) {
         Alert.alert(
-          "Incorrect Password",
-          "The password you entered is incorrect."
+          "Account Mismatch",
+          "The server returned an account that does not match the entered email."
         );
         return;
       }
 
-      const savedRole = String(account.role ?? "").trim().toLowerCase();
+      const savedRole = String(user.role ?? "")
+        .trim()
+        .toLowerCase();
 
-      if (role === "Agent" && savedRole !== "agent") {
+      if (
+        savedRole !== "tourist" &&
+        savedRole !== "agent"
+      ) {
+        Alert.alert(
+          "Account Error",
+          "Your account role is missing or invalid. Please contact the administrator."
+        );
+        return;
+      }
+
+      if (
+        role === "Agent" &&
+        savedRole !== "agent"
+      ) {
         Alert.alert(
           "Role Mismatch",
           "This account is registered as a Tourist. Please select Tourist to sign in."
@@ -137,7 +177,10 @@ export default function SignInScreen() {
         return;
       }
 
-      if (role === "Tourist" && savedRole !== "tourist") {
+      if (
+        role === "Tourist" &&
+        savedRole !== "tourist"
+      ) {
         Alert.alert(
           "Role Mismatch",
           "This account is registered as an Agent. Please select Agent to sign in."
@@ -145,16 +188,15 @@ export default function SignInScreen() {
         return;
       }
 
-      if (role === "Agent") {
-        const savedAgentId = String(account.agentId ?? "")
-          .trim()
-          .replace(/\s+/g, "")
-          .toUpperCase();
+      if (savedRole === "agent") {
+        const savedAgentId = normalizeAgentId(
+          user.agentId ?? ""
+        );
 
         if (!savedAgentId) {
           Alert.alert(
             "Agent ID Missing",
-            "Agent ID is not saved in this account. Please check the ID used during registration."
+            "Your registered account does not contain an Agent ID. Please contact the administrator."
           );
           return;
         }
@@ -162,48 +204,55 @@ export default function SignInScreen() {
         if (savedAgentId !== enteredAgentId) {
           Alert.alert(
             "Invalid Agent ID",
-            "The Agent ID does not match the ID saved during registration. Enter the same ID you used when creating this account."
+            "The Agent ID does not match your registered account."
           );
           return;
         }
+      }
 
-        // Agent session: existing Agent flow preserved.
+      const currentUser = {
+        id: user._id ?? user.id ?? "",
+        name: user.name ?? "",
+        email: savedEmail,
+        phone: user.phone ?? "",
+        role: savedRole,
+        hotelName: user.hotelName ?? "",
+        hotelAddress: user.hotelAddress ?? "",
+        agentId: user.agentId ?? "",
+        verificationStatus:
+          user.verificationStatus ??
+          (savedRole === "agent"
+            ? "pending"
+            : "not_required"),
+      };
+
+      await AsyncStorage.setItem(
+        "safeTourismCurrentUser",
+        JSON.stringify(currentUser)
+      );
+
+      if (token) {
         await AsyncStorage.setItem(
-          "safeTourismCurrentUser",
-          JSON.stringify({
-            name: account.name,
-            email: account.email,
-            phone: account.phone,
-            role: account.role,
-            hotelName: account.hotelName ?? "",
-            hotelAddress: account.hotelAddress ?? "",
-            agentId: account.agentId ?? "",
-            verificationStatus:
-              account.verificationStatus ?? "pending",
-          })
+          "safeTourismToken",
+          token
         );
+      } else {
+        await AsyncStorage.removeItem(
+          "safeTourismToken"
+        );
+      }
 
+      if (savedRole === "agent") {
         router.replace("/(agent)" as any);
       } else {
-        // Tourist session: save profile details for Settings.
-        await AsyncStorage.setItem(
-          "safeTourismCurrentUser",
-          JSON.stringify({
-            name: account.name ?? "",
-            email: account.email ?? "",
-            phone: account.phone ?? "",
-            role: "tourist",
-          })
-        );
-
         router.replace("/(drawer)" as any);
       }
     } catch (error) {
       console.error("Sign-in error:", error);
 
       Alert.alert(
-        "Sign In Failed",
-        "Something went wrong while signing in. Please try again."
+        "Connection Failed",
+        "Could not connect to the Safe Tourism backend. Check that your Mac backend is running on port 5001 and your phone and Mac are connected to the same Wi-Fi."
       );
     } finally {
       setLoading(false);
@@ -214,7 +263,9 @@ export default function SignInScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={
+          Platform.OS === "ios" ? "padding" : undefined
+        }
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -242,26 +293,34 @@ export default function SignInScreen() {
               Sign in to continue your safe journey.
             </Text>
 
-            <Text style={styles.sectionLabel}>SIGN IN AS</Text>
+            <Text style={styles.sectionLabel}>
+              SIGN IN AS
+            </Text>
 
             <View style={styles.roleContainer}>
               <TouchableOpacity
                 activeOpacity={0.85}
                 style={[
                   styles.roleButton,
-                  role === "Tourist" && styles.selectedRole,
+                  role === "Tourist" &&
+                    styles.selectedRole,
                 ]}
                 onPress={() => setRole("Tourist")}
               >
                 <Ionicons
                   name="person-outline"
                   size={21}
-                  color={role === "Tourist" ? "#FFFFFF" : "#8993AD"}
+                  color={
+                    role === "Tourist"
+                      ? "#FFFFFF"
+                      : "#8993AD"
+                  }
                 />
                 <Text
                   style={[
                     styles.roleText,
-                    role === "Tourist" && styles.selectedRoleText,
+                    role === "Tourist" &&
+                      styles.selectedRoleText,
                   ]}
                 >
                   Tourist
@@ -272,19 +331,25 @@ export default function SignInScreen() {
                 activeOpacity={0.85}
                 style={[
                   styles.roleButton,
-                  role === "Agent" && styles.selectedRole,
+                  role === "Agent" &&
+                    styles.selectedRole,
                 ]}
                 onPress={() => setRole("Agent")}
               >
                 <Ionicons
                   name="business-outline"
                   size={21}
-                  color={role === "Agent" ? "#FFFFFF" : "#8993AD"}
+                  color={
+                    role === "Agent"
+                      ? "#FFFFFF"
+                      : "#8993AD"
+                  }
                 />
                 <Text
                   style={[
                     styles.roleText,
-                    role === "Agent" && styles.selectedRoleText,
+                    role === "Agent" &&
+                      styles.selectedRoleText,
                   ]}
                 >
                   Agent
@@ -292,22 +357,27 @@ export default function SignInScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Email or Phone Number</Text>
+            <Text style={styles.label}>
+              Registered Email Address
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons
-                name="person-outline"
+                name="mail-outline"
                 size={20}
                 color="#8993AD"
               />
               <TextInput
                 style={styles.input}
-                placeholder="Enter email or phone"
+                placeholder="Enter your registered email"
                 placeholderTextColor="#69738D"
                 value={identifier}
                 onChangeText={setIdentifier}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
+                autoComplete="email"
+                editable={!loading}
+                returnKeyType="next"
               />
             </View>
 
@@ -327,12 +397,23 @@ export default function SignInScreen() {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="current-password"
+                editable={!loading}
+                returnKeyType="done"
+                onSubmitEditing={handleSignIn}
               />
               <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
+                onPress={() =>
+                  setShowPassword(!showPassword)
+                }
+                disabled={loading}
               >
                 <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  name={
+                    showPassword
+                      ? "eye-off-outline"
+                      : "eye-outline"
+                  }
                   size={20}
                   color="#8993AD"
                 />
@@ -347,13 +428,18 @@ export default function SignInScreen() {
                     size={21}
                     color="#00D4FF"
                   />
-                  <View style={styles.noticeTextContainer}>
+                  <View
+                    style={styles.noticeTextContainer}
+                  >
                     <Text style={styles.noticeTitle}>
                       Agent Verification
                     </Text>
-                    <Text style={styles.noticeDescription}>
-                      Enter the Agent ID used during registration and the
-                      demo verification code.
+                    <Text
+                      style={styles.noticeDescription}
+                    >
+                      Enter the Agent ID used during
+                      registration and the demo
+                      verification code.
                     </Text>
                   </View>
                 </View>
@@ -361,7 +447,7 @@ export default function SignInScreen() {
                 <Text style={styles.label}>Agent ID</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
-                    name="id-card-outline"
+                    name="card-outline"
                     size={20}
                     color="#8993AD"
                   />
@@ -373,10 +459,13 @@ export default function SignInScreen() {
                     onChangeText={setAgentId}
                     autoCapitalize="characters"
                     autoCorrect={false}
+                    editable={!loading}
                   />
                 </View>
 
-                <Text style={styles.label}>Verification Code</Text>
+                <Text style={styles.label}>
+                  Verification Code
+                </Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="key-outline"
@@ -391,6 +480,7 @@ export default function SignInScreen() {
                     onChangeText={setVerificationCode}
                     autoCapitalize="characters"
                     autoCorrect={false}
+                    editable={!loading}
                   />
                 </View>
 
@@ -413,7 +503,9 @@ export default function SignInScreen() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
-                  <Text style={styles.signInButtonText}>Sign In</Text>
+                  <Text style={styles.signInButtonText}>
+                    Sign In
+                  </Text>
                   <Ionicons
                     name="arrow-forward"
                     size={20}
@@ -428,11 +520,14 @@ export default function SignInScreen() {
                 Don't have an account?{" "}
               </Text>
               <TouchableOpacity
+                disabled={loading}
                 onPress={() =>
                   router.push("/(auth)/sign-up" as any)
                 }
               >
-                <Text style={styles.signupLink}>Sign Up</Text>
+                <Text style={styles.signupLink}>
+                  Sign Up
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
