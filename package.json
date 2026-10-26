@@ -17,7 +17,7 @@
     "@react-navigation/bottom-tabs": "^7.15.5",
     "@react-navigation/drawer": "^7.13.10",
     "@react-navigation/elements": "^2.9.10",
-    "@react-navigation/native": "^7.1.33",
+    "@react-navigation/native": "^7.5.1",
     "axios": "^1.20.0",
     "dotenv": "^18.0.9",
     "expo": "~55.0.31",

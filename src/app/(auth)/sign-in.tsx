@@ -1,3 +1,4 @@
+
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
@@ -31,7 +32,7 @@ type AccountUser = {
   verificationStatus?: string;
 };
 
-const API_BASE_URL = "http://192.168.1.35:5001/api";
+const API_BASE_URL = "http://10.6.0.126:5001/api";
 const AGENT_VERIFICATION_CODE = "AGENT2026";
 
 const normalizeEmail = (value: string) =>
@@ -48,6 +49,9 @@ export default function SignInScreen() {
   const [verificationCode, setVerificationCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminSecretCode, setAdminSecretCode] = useState("");
 
   const handleSignIn = async () => {
     if (loading) return;
@@ -83,9 +87,7 @@ export default function SignInScreen() {
         return;
       }
 
-      if (
-        enteredVerificationCode !== AGENT_VERIFICATION_CODE
-      ) {
+      if (enteredVerificationCode !== AGENT_VERIFICATION_CODE) {
         Alert.alert(
           "Verification Failed",
           "The Agent verification code is incorrect."
@@ -97,21 +99,18 @@ export default function SignInScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/auth/signin`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password: cleanPassword,
-            role: role.toLowerCase(),
-          }),
-        }
-      );
+      const response = await fetch(`${API_BASE_URL}/auth/signin`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password: cleanPassword,
+          role: role.toLowerCase(),
+        }),
+      });
 
       const result = await response.json();
 
@@ -125,10 +124,7 @@ export default function SignInScreen() {
       }
 
       const user: AccountUser =
-        result.user ??
-        result.data?.user ??
-        result.data ??
-        {};
+        result.user ?? result.data?.user ?? result.data ?? {};
 
       const token: string | undefined =
         result.token ?? result.data?.token;
@@ -155,10 +151,7 @@ export default function SignInScreen() {
         .trim()
         .toLowerCase();
 
-      if (
-        savedRole !== "tourist" &&
-        savedRole !== "agent"
-      ) {
+      if (savedRole !== "tourist" && savedRole !== "agent") {
         Alert.alert(
           "Account Error",
           "Your account role is missing or invalid. Please contact the administrator."
@@ -166,32 +159,24 @@ export default function SignInScreen() {
         return;
       }
 
-      if (
-        role === "Agent" &&
-        savedRole !== "agent"
-      ) {
+      if (role === "Agent" && savedRole !== "agent") {
         Alert.alert(
           "Role Mismatch",
-          "This account is registered as a Tourist. Please select Tourist to sign in."
+          "This account is not registered as an Agent."
         );
         return;
       }
 
-      if (
-        role === "Tourist" &&
-        savedRole !== "tourist"
-      ) {
+      if (role === "Tourist" && savedRole !== "tourist") {
         Alert.alert(
           "Role Mismatch",
-          "This account is registered as an Agent. Please select Agent to sign in."
+          "This account is not registered as a Tourist."
         );
         return;
       }
 
       if (savedRole === "agent") {
-        const savedAgentId = normalizeAgentId(
-          user.agentId ?? ""
-        );
+        const savedAgentId = normalizeAgentId(user.agentId ?? "");
 
         if (!savedAgentId) {
           Alert.alert(
@@ -221,9 +206,7 @@ export default function SignInScreen() {
         agentId: user.agentId ?? "",
         verificationStatus:
           user.verificationStatus ??
-          (savedRole === "agent"
-            ? "pending"
-            : "not_required"),
+          (savedRole === "agent" ? "pending" : "not_required"),
       };
 
       await AsyncStorage.setItem(
@@ -232,14 +215,9 @@ export default function SignInScreen() {
       );
 
       if (token) {
-        await AsyncStorage.setItem(
-          "safeTourismToken",
-          token
-        );
+        await AsyncStorage.setItem("safeTourismToken", token);
       } else {
-        await AsyncStorage.removeItem(
-          "safeTourismToken"
-        );
+        await AsyncStorage.removeItem("safeTourismToken");
       }
 
       if (savedRole === "agent") {
@@ -252,7 +230,82 @@ export default function SignInScreen() {
 
       Alert.alert(
         "Connection Failed",
-        "Could not connect to the Safe Tourism backend. Check that your Mac backend is running on port 5001 and your phone and Mac are connected to the same Wi-Fi."
+        "Could not connect to the Safe Tourism backend. Check that your backend is running and your phone and Mac are connected to the same Wi-Fi."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminLogin = async () => {
+    if (loading) return;
+
+    if (!adminSecretCode.trim()) {
+      Alert.alert(
+        "Missing Code",
+        "Please enter the Admin secret code."
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/admin/verify`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            secretCode: adminSecretCode.trim(),
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result.success !== true) {
+        Alert.alert(
+          "Access Denied",
+          result.message || "Invalid Admin secret code."
+        );
+        return;
+      }
+
+      const token: string | undefined =
+        result.token ?? result.data?.token;
+
+      if (!token) {
+        Alert.alert(
+          "Login Error",
+          "The server did not return an Admin authentication token."
+        );
+        return;
+      }
+
+      const adminUser = {
+        ...(result.user ?? result.data?.user ?? {}),
+        role: "admin",
+      };
+
+      await AsyncStorage.setItem(
+        "safeTourismCurrentUser",
+        JSON.stringify(adminUser)
+      );
+
+      await AsyncStorage.setItem("safeTourismToken", token);
+
+      setAdminSecretCode("");
+      router.replace("/(admin)" as any);
+    } catch (error) {
+      console.error("Admin login error:", error);
+
+      Alert.alert(
+        "Connection Failed",
+        "Could not connect to the backend. Check that your server is running."
       );
     } finally {
       setLoading(false);
@@ -263,9 +316,7 @@ export default function SignInScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={
-          Platform.OS === "ios" ? "padding" : undefined
-        }
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -293,34 +344,27 @@ export default function SignInScreen() {
               Sign in to continue your safe journey.
             </Text>
 
-            <Text style={styles.sectionLabel}>
-              SIGN IN AS
-            </Text>
+            <Text style={styles.sectionLabel}>SIGN IN AS</Text>
 
             <View style={styles.roleContainer}>
               <TouchableOpacity
                 activeOpacity={0.85}
                 style={[
                   styles.roleButton,
-                  role === "Tourist" &&
-                    styles.selectedRole,
+                  role === "Tourist" && styles.selectedRole,
                 ]}
                 onPress={() => setRole("Tourist")}
+                disabled={loading}
               >
                 <Ionicons
                   name="person-outline"
                   size={21}
-                  color={
-                    role === "Tourist"
-                      ? "#FFFFFF"
-                      : "#8993AD"
-                  }
+                  color={role === "Tourist" ? "#FFFFFF" : "#8993AD"}
                 />
                 <Text
                   style={[
                     styles.roleText,
-                    role === "Tourist" &&
-                      styles.selectedRoleText,
+                    role === "Tourist" && styles.selectedRoleText,
                   ]}
                 >
                   Tourist
@@ -331,25 +375,20 @@ export default function SignInScreen() {
                 activeOpacity={0.85}
                 style={[
                   styles.roleButton,
-                  role === "Agent" &&
-                    styles.selectedRole,
+                  role === "Agent" && styles.selectedRole,
                 ]}
                 onPress={() => setRole("Agent")}
+                disabled={loading}
               >
                 <Ionicons
                   name="business-outline"
                   size={21}
-                  color={
-                    role === "Agent"
-                      ? "#FFFFFF"
-                      : "#8993AD"
-                  }
+                  color={role === "Agent" ? "#FFFFFF" : "#8993AD"}
                 />
                 <Text
                   style={[
                     styles.roleText,
-                    role === "Agent" &&
-                      styles.selectedRoleText,
+                    role === "Agent" && styles.selectedRoleText,
                   ]}
                 >
                   Agent
@@ -357,9 +396,7 @@ export default function SignInScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>
-              Registered Email Address
-            </Text>
+            <Text style={styles.label}>Registered Email Address</Text>
             <View style={styles.inputContainer}>
               <Ionicons
                 name="mail-outline"
@@ -403,17 +440,11 @@ export default function SignInScreen() {
                 onSubmitEditing={handleSignIn}
               />
               <TouchableOpacity
-                onPress={() =>
-                  setShowPassword(!showPassword)
-                }
+                onPress={() => setShowPassword(!showPassword)}
                 disabled={loading}
               >
                 <Ionicons
-                  name={
-                    showPassword
-                      ? "eye-off-outline"
-                      : "eye-outline"
-                  }
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
                   size={20}
                   color="#8993AD"
                 />
@@ -428,18 +459,13 @@ export default function SignInScreen() {
                     size={21}
                     color="#00D4FF"
                   />
-                  <View
-                    style={styles.noticeTextContainer}
-                  >
+                  <View style={styles.noticeTextContainer}>
                     <Text style={styles.noticeTitle}>
                       Agent Verification
                     </Text>
-                    <Text
-                      style={styles.noticeDescription}
-                    >
-                      Enter the Agent ID used during
-                      registration and the demo
-                      verification code.
+                    <Text style={styles.noticeDescription}>
+                      Enter the Agent ID used during registration and
+                      the demo verification code.
                     </Text>
                   </View>
                 </View>
@@ -463,9 +489,7 @@ export default function SignInScreen() {
                   />
                 </View>
 
-                <Text style={styles.label}>
-                  Verification Code
-                </Text>
+                <Text style={styles.label}>Verification Code</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="key-outline"
@@ -503,9 +527,7 @@ export default function SignInScreen() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
-                  <Text style={styles.signInButtonText}>
-                    Sign In
-                  </Text>
+                  <Text style={styles.signInButtonText}>Sign In</Text>
                   <Ionicons
                     name="arrow-forward"
                     size={20}
@@ -521,15 +543,89 @@ export default function SignInScreen() {
               </Text>
               <TouchableOpacity
                 disabled={loading}
-                onPress={() =>
-                  router.push("/(auth)/sign-up" as any)
-                }
+                onPress={() => router.push("/(auth)/sign-up" as any)}
               >
-                <Text style={styles.signupLink}>
-                  Sign Up
-                </Text>
+                <Text style={styles.signupLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.adminLoginLink}
+              activeOpacity={0.8}
+              disabled={loading}
+              onPress={() => {
+                setShowAdminLogin(!showAdminLogin);
+                setAdminSecretCode("");
+              }}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={19}
+                color="#A99FFF"
+              />
+              <Text style={styles.adminLoginText}>Enter as Admin</Text>
+              <Ionicons
+                name={showAdminLogin ? "chevron-up" : "chevron-down"}
+                size={17}
+                color="#A99FFF"
+              />
+            </TouchableOpacity>
+
+            {showAdminLogin && (
+              <View style={styles.adminBox}>
+                <Text style={styles.adminTitle}>
+                  Administrator Access
+                </Text>
+                <Text style={styles.adminDescription}>
+                  Enter your private Admin secret code to continue.
+                </Text>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="key-outline"
+                    size={20}
+                    color="#8993AD"
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter Admin secret code"
+                    placeholderTextColor="#69738D"
+                    value={adminSecretCode}
+                    onChangeText={setAdminSecretCode}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!loading}
+                    onSubmitEditing={handleAdminLogin}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.signInButton,
+                    loading && styles.disabledButton,
+                  ]}
+                  onPress={handleAdminLogin}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.signInButtonText}>
+                        Verify & Continue
+                      </Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           <View style={styles.footer}>
@@ -739,6 +835,39 @@ const styles = StyleSheet.create({
     color: "#00D4FF",
     fontSize: 13,
     fontWeight: "800",
+  },
+  adminLoginLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    marginTop: 20,
+    paddingVertical: 10,
+  },
+  adminLoginText: {
+    color: "#A99FFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  adminBox: {
+    marginTop: 8,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#111A30",
+    borderWidth: 1,
+    borderColor: "#5149C8",
+  },
+  adminTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  adminDescription: {
+    color: "#9AA8C2",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 14,
   },
   footer: {
     flexDirection: "row",

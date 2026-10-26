@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -5,6 +6,7 @@ require("dotenv").config();
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const sosRoutes = require("./routes/sosRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -32,6 +34,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/sos", sosRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -44,6 +47,10 @@ async function startServer() {
   try {
     if (!process.env.JWT_SECRET) {
       throw new Error("JWT_SECRET is missing in backend/.env");
+    }
+
+    if (!process.env.ADMIN_SECRET_CODE) {
+      throw new Error("ADMIN_SECRET_CODE is missing in backend/.env");
     }
 
     await connectDB();

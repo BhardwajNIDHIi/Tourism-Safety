@@ -1,3 +1,4 @@
+
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -11,6 +12,7 @@ const {
 
 const router = express.Router();
 
+// Create a token for registered Tourist/Agent accounts.
 function createToken(user) {
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET is missing from environment variables.");
@@ -26,7 +28,23 @@ function createToken(user) {
   );
 }
 
-// Normalize role for comparison and database lookup.
+// Create a token for Admin.
+function createAdminToken() {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is missing from environment variables.");
+  }
+
+  return jwt.sign(
+    {
+      role: "Admin",
+      isAdmin: true,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "2h" }
+  );
+}
+
+// Normalize Tourist/Agent roles.
 function normalizeRole(role) {
   if (typeof role !== "string") return null;
 
@@ -38,7 +56,7 @@ function normalizeRole(role) {
   return null;
 }
 
-// Return a safe public user object without the password.
+// Never return a user's password.
 function publicUser(user) {
   return {
     id: user._id.toString(),
@@ -54,6 +72,62 @@ function publicUser(user) {
       (user.role === "Agent" ? "pending" : "not_required"),
   };
 }
+
+// POST /api/auth/admin/verify
+// Admin secret is checked on the backend, never in the app.
+router.post("/admin/verify", async (req, res) => {
+  try {
+    const { secretCode } = req.body || {};
+
+    if (
+      typeof secretCode !== "string" ||
+      !secretCode.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Admin secret code is required.",
+      });
+    }
+
+    const configuredCode = process.env.ADMIN_SECRET_CODE;
+
+    if (!configuredCode) {
+      console.error("ADMIN_SECRET_CODE is missing in backend/.env");
+
+      return res.status(500).json({
+        success: false,
+        message: "Admin verification is not configured.",
+      });
+    }
+
+    if (secretCode !== configuredCode) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid Admin secret code.",
+      });
+    }
+
+    const token = createAdminToken();
+
+    return res.status(200).json({
+      success: true,
+      message: "Admin verification successful.",
+      token,
+      user: {
+        id: "admin",
+        name: "Safe Tourism Admin",
+        role: "Admin",
+      },
+    });
+  } catch (error) {
+    console.error("Admin verification error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Admin verification failed.",
+    });
+  }
+});
 
 // POST /api/auth/send-otp
 router.post("/send-otp", async (req, res) => {
@@ -115,7 +189,10 @@ router.post("/verify-otp", (req, res) => {
       });
     }
 
-    const result = verifyEmailOtp(email.trim().toLowerCase(), otp);
+    const result = verifyEmailOtp(
+      email.trim().toLowerCase(),
+      otp
+    );
 
     if (!result.success) {
       return res.status(400).json({
@@ -204,7 +281,8 @@ router.post("/signup", async (req, res) => {
 
       if (
         !process.env.AGENT_VERIFICATION_CODE ||
-        agentVerificationCode !== process.env.AGENT_VERIFICATION_CODE
+        agentVerificationCode !==
+          process.env.AGENT_VERIFICATION_CODE
       ) {
         return res.status(403).json({
           success: false,
@@ -226,7 +304,6 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    // Email OTP verification is compulsory before signup.
     if (!isEmailVerified(normalizedEmail)) {
       return res.status(403).json({
         success: false,
@@ -280,7 +357,6 @@ router.post("/signin", async (req, res) => {
   try {
     const { email, password, role } = req.body || {};
 
-    // Validate required sign-in fields.
     if (
       typeof email !== "string" ||
       !email.trim() ||
