@@ -1,22 +1,30 @@
+
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const SOSAlert = require("../models/SOSAlert");
 
 const router = express.Router();
 
-async function authenticate(req, res, next) {
+function authenticate(req, res, next) {
   try {
-    const header = req.headers.authorization;
+    const header = req.headers.authorization || "";
+    const [scheme, token] = header.split(" ");
 
-    if (!header || !header.startsWith("Bearer ")) {
+    if (scheme !== "Bearer" || !token) {
       return res.status(401).json({
         success: false,
         message: "Please sign in to continue.",
       });
     }
 
-    const token = header.slice(7);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (!decoded.id || !decoded.role) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid login token. Please sign in again.",
+      });
+    }
 
     req.user = decoded;
     next();
@@ -28,15 +36,21 @@ async function authenticate(req, res, next) {
   }
 }
 
+function requireTourist(req, res, next) {
+  if (req.user.role !== "Tourist") {
+    return res.status(403).json({
+      success: false,
+      message: "Only Tourist accounts can create SOS alerts.",
+    });
+  }
+
+  next();
+}
+
 // POST /api/sos
-router.post("/", authenticate, async (req, res) => {
+router.post("/", authenticate, requireTourist, async (req, res) => {
   try {
-    const {
-      category,
-      description,
-      location,
-      forWhom,
-    } = req.body;
+    const { category, description, location, forWhom } = req.body;
 
     const validCategories = [
       "Vehicle Issue",
@@ -73,14 +87,19 @@ router.post("/", authenticate, async (req, res) => {
       });
     }
 
+    const validForWhom = [
+      "Me",
+      "Someone else",
+      "Multiple people",
+    ];
+
     const alert = await SOSAlert.create({
       user: req.user.id,
       category,
-      description,
+      description:
+        typeof description === "string" ? description.trim() : "",
       location: { latitude, longitude },
-      forWhom: ["Me", "Someone else", "Multiple people"].includes(forWhom)
-        ? forWhom
-        : "Me",
+      forWhom: validForWhom.includes(forWhom) ? forWhom : "Me",
     });
 
     return res.status(201).json({
@@ -99,7 +118,7 @@ router.post("/", authenticate, async (req, res) => {
 });
 
 // GET /api/sos/my-alerts
-router.get("/my-alerts", authenticate, async (req, res) => {
+router.get("/my-alerts", authenticate, requireTourist, async (req, res) => {
   try {
     const alerts = await SOSAlert.find({
       user: req.user.id,

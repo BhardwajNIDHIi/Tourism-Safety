@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const sosAlertSchema = new mongoose.Schema(
@@ -46,7 +47,7 @@ const sosAlertSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Active", "Resolved", "Cancelled"],
+      enum: ["Active", "Acknowledged", "Resolved", "Cancelled"],
       default: "Active",
     },
   },
