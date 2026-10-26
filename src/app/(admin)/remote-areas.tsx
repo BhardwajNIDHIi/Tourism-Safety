@@ -5,7 +5,7 @@ import React, { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
-const API = "http://10.6.0.126:5001/api";
+const API = "http://192.168.1.35:5001/api";
 
 export default function AdminRemoteAreas() {
   const [areas, setAreas] = useState<any[]>([]);

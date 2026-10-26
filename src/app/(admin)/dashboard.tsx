@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
-const API = "http://10.6.0.126:5001/api";
+const API = "http://192.168.1.35:5001/api";
 
 type Stats = {
   totalAgents?: number;

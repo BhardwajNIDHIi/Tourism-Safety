@@ -32,7 +32,7 @@ type AccountUser = {
   verificationStatus?: string;
 };
 
-const API_BASE_URL = "http://10.6.0.126:5001/api";
+const API_BASE_URL = "http://192.168.1.35:5001/api";
 const AGENT_VERIFICATION_CODE = "AGENT2026";
 
 const normalizeEmail = (value: string) =>
@@ -52,6 +52,7 @@ export default function SignInScreen() {
 
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminSecretCode, setAdminSecretCode] = useState("");
+  const [showAdminCode, setShowAdminCode] = useState(false);
 
   const handleSignIn = async () => {
     if (loading) return;
@@ -299,7 +300,7 @@ export default function SignInScreen() {
       await AsyncStorage.setItem("safeTourismToken", token);
 
       setAdminSecretCode("");
-      router.replace("/(admin)" as any);
+      router.replace("/(admin)/dashboard" as any);
     } catch (error) {
       console.error("Admin login error:", error);
 
@@ -312,336 +313,368 @@ export default function SignInScreen() {
     }
   };
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+  
+return (
+  <SafeAreaView style={styles.safeArea}>
+    <KeyboardAvoidingView
+      style={styles.keyboardView}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <View style={styles.logoCircle}>
-              <Ionicons
-                name="shield-checkmark"
-                size={36}
-                color="#00D4FF"
-              />
-            </View>
-
-            <Text style={styles.brand}>SAFE TOURISM</Text>
-            <Text style={styles.tagline}>
-              Travel Safe. Explore Freely.
-            </Text>
+        <View style={styles.header}>
+          <View style={styles.logoCircle}>
+            <Ionicons
+              name="shield-checkmark"
+              size={36}
+              color="#00D4FF"
+            />
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>
-              Sign in to continue your safe journey.
-            </Text>
+          <Text style={styles.brand}>SAFE TOURISM</Text>
+          <Text style={styles.tagline}>
+            Travel Safe. Explore Freely.
+          </Text>
+        </View>
 
-            <Text style={styles.sectionLabel}>SIGN IN AS</Text>
+        <View style={styles.card}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>
+            Sign in to continue your safe journey.
+          </Text>
 
-            <View style={styles.roleContainer}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[
-                  styles.roleButton,
-                  role === "Tourist" && styles.selectedRole,
-                ]}
-                onPress={() => setRole("Tourist")}
-                disabled={loading}
-              >
-                <Ionicons
-                  name="person-outline"
-                  size={21}
-                  color={role === "Tourist" ? "#FFFFFF" : "#8993AD"}
-                />
-                <Text
-                  style={[
-                    styles.roleText,
-                    role === "Tourist" && styles.selectedRoleText,
-                  ]}
-                >
-                  Tourist
-                </Text>
-              </TouchableOpacity>
+          <Text style={styles.sectionLabel}>SIGN IN AS</Text>
 
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[
-                  styles.roleButton,
-                  role === "Agent" && styles.selectedRole,
-                ]}
-                onPress={() => setRole("Agent")}
-                disabled={loading}
-              >
-                <Ionicons
-                  name="business-outline"
-                  size={21}
-                  color={role === "Agent" ? "#FFFFFF" : "#8993AD"}
-                />
-                <Text
-                  style={[
-                    styles.roleText,
-                    role === "Agent" && styles.selectedRoleText,
-                  ]}
-                >
-                  Agent
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>Registered Email Address</Text>
-            <View style={styles.inputContainer}>
+          <View style={styles.roleContainer}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.roleButton,
+                role === "Tourist" && styles.selectedRole,
+              ]}
+              onPress={() => setRole("Tourist")}
+              disabled={loading}
+            >
               <Ionicons
-                name="mail-outline"
-                size={20}
-                color="#8993AD"
+                name="person-outline"
+                size={21}
+                color={role === "Tourist" ? "#FFFFFF" : "#8993AD"}
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your registered email"
-                placeholderTextColor="#69738D"
-                value={identifier}
-                onChangeText={setIdentifier}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-                autoComplete="email"
-                editable={!loading}
-                returnKeyType="next"
-              />
-            </View>
-
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color="#8993AD"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#69738D"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="current-password"
-                editable={!loading}
-                returnKeyType="done"
-                onSubmitEditing={handleSignIn}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                disabled={loading}
+              <Text
+                style={[
+                  styles.roleText,
+                  role === "Tourist" && styles.selectedRoleText,
+                ]}
               >
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#8993AD"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {role === "Agent" && (
-              <>
-                <View style={styles.agentNotice}>
-                  <Ionicons
-                    name="shield-checkmark-outline"
-                    size={21}
-                    color="#00D4FF"
-                  />
-                  <View style={styles.noticeTextContainer}>
-                    <Text style={styles.noticeTitle}>
-                      Agent Verification
-                    </Text>
-                    <Text style={styles.noticeDescription}>
-                      Enter the Agent ID used during registration and
-                      the demo verification code.
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.label}>Agent ID</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons
-                    name="card-outline"
-                    size={20}
-                    color="#8993AD"
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your registered Agent ID"
-                    placeholderTextColor="#69738D"
-                    value={agentId}
-                    onChangeText={setAgentId}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    editable={!loading}
-                  />
-                </View>
-
-                <Text style={styles.label}>Verification Code</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons
-                    name="key-outline"
-                    size={20}
-                    color="#8993AD"
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter verification code"
-                    placeholderTextColor="#69738D"
-                    value={verificationCode}
-                    onChangeText={setVerificationCode}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    editable={!loading}
-                  />
-                </View>
-
-                <Text style={styles.helperText}>
-                  Demo code: AGENT2026
-                </Text>
-              </>
-            )}
+                Tourist
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               activeOpacity={0.85}
               style={[
-                styles.signInButton,
-                loading && styles.disabledButton,
+                styles.roleButton,
+                role === "Agent" && styles.selectedRole,
               ]}
-              onPress={handleSignIn}
+              onPress={() => setRole("Agent")}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.signInButtonText}>Sign In</Text>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={20}
-                    color="#FFFFFF"
-                  />
-                </>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.signupRow}>
-              <Text style={styles.signupText}>
-                Don't have an account?{" "}
-              </Text>
-              <TouchableOpacity
-                disabled={loading}
-                onPress={() => router.push("/(auth)/sign-up" as any)}
+              <Ionicons
+                name="business-outline"
+                size={21}
+                color={role === "Agent" ? "#FFFFFF" : "#8993AD"}
+              />
+              <Text
+                style={[
+                  styles.roleText,
+                  role === "Agent" && styles.selectedRoleText,
+                ]}
               >
-                <Text style={styles.signupLink}>Sign Up</Text>
-              </TouchableOpacity>
-            </View>
+                Agent
+              </Text>
+            </TouchableOpacity>
+          </View>
 
+          <Text style={styles.label}>Registered Email Address</Text>
+
+          <View style={styles.inputContainer}>
+            <Ionicons
+              name="mail-outline"
+              size={20}
+              color="#8993AD"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your registered email"
+              placeholderTextColor="#69738D"
+              value={identifier}
+              onChangeText={setIdentifier}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+              autoComplete="email"
+              editable={!loading}
+              returnKeyType="next"
+            />
+          </View>
+
+          <Text style={styles.label}>Password</Text>
+
+          <View style={styles.inputContainer}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color="#8993AD"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your password"
+              placeholderTextColor="#69738D"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="current-password"
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleSignIn}
+            />
             <TouchableOpacity
-              style={styles.adminLoginLink}
-              activeOpacity={0.8}
+              onPress={() => setShowPassword(!showPassword)}
               disabled={loading}
-              onPress={() => {
-                setShowAdminLogin(!showAdminLogin);
-                setAdminSecretCode("");
-              }}
+              activeOpacity={0.7}
             >
               <Ionicons
-                name="shield-checkmark-outline"
-                size={19}
-                color="#A99FFF"
-              />
-              <Text style={styles.adminLoginText}>Enter as Admin</Text>
-              <Ionicons
-                name={showAdminLogin ? "chevron-up" : "chevron-down"}
-                size={17}
-                color="#A99FFF"
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+                color="#8993AD"
               />
             </TouchableOpacity>
+          </View>
 
-            {showAdminLogin && (
-              <View style={styles.adminBox}>
-                <Text style={styles.adminTitle}>
-                  Administrator Access
-                </Text>
-                <Text style={styles.adminDescription}>
-                  Enter your private Admin secret code to continue.
-                </Text>
+          {role === "Agent" && (
+            <>
+              <View style={styles.agentNotice}>
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={21}
+                  color="#00D4FF"
+                />
+                <View style={styles.noticeTextContainer}>
+                  <Text style={styles.noticeTitle}>
+                    Agent Verification
+                  </Text>
+                  <Text style={styles.noticeDescription}>
+                    Enter the Agent ID used during registration and
+                    the demo verification code.
+                  </Text>
+                </View>
+              </View>
 
-                <View style={styles.inputContainer}>
+              <Text style={styles.label}>Agent ID</Text>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="card-outline"
+                  size={20}
+                  color="#8993AD"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your registered Agent ID"
+                  placeholderTextColor="#69738D"
+                  value={agentId}
+                  onChangeText={setAgentId}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+
+              <Text style={styles.label}>Verification Code</Text>
+
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="key-outline"
+                  size={20}
+                  color="#8993AD"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter verification code"
+                  placeholderTextColor="#69738D"
+                  value={verificationCode}
+                  onChangeText={setVerificationCode}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+
+              <Text style={styles.helperText}>
+                Demo code: AGENT2026
+              </Text>
+            </>
+          )}
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[
+              styles.signInButton,
+              loading && styles.disabledButton,
+            ]}
+            onPress={handleSignIn}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.signInButtonText}>Sign In</Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.signupRow}>
+            <Text style={styles.signupText}>
+              Don't have an account?{" "}
+            </Text>
+            <TouchableOpacity
+              disabled={loading}
+              onPress={() => router.push("/(auth)/sign-up" as any)}
+            >
+              <Text style={styles.signupLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.adminLoginLink}
+            activeOpacity={0.8}
+            disabled={loading}
+            onPress={() => {
+              setShowAdminLogin(!showAdminLogin);
+              setAdminSecretCode("");
+              setShowAdminCode(false);
+            }}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={19}
+              color="#A99FFF"
+            />
+            <Text style={styles.adminLoginText}>Enter as Admin</Text>
+            <Ionicons
+              name={showAdminLogin ? "chevron-up" : "chevron-down"}
+              size={17}
+              color="#A99FFF"
+            />
+          </TouchableOpacity>
+
+          {showAdminLogin && (
+            <View style={styles.adminBox}>
+              <Text style={styles.adminTitle}>
+                Administrator Access
+              </Text>
+
+              <Text style={styles.adminDescription}>
+                Enter your private Admin secret code to continue.
+              </Text>
+
+              {/* Updated Admin password field with show/hide icon */}
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="key-outline"
+                  size={20}
+                  color="#8993AD"
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter Admin secret code"
+                  placeholderTextColor="#69738D"
+                  value={adminSecretCode}
+                  onChangeText={setAdminSecretCode}
+                  secureTextEntry={!showAdminCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={handleAdminLogin}
+                />
+
+                <TouchableOpacity
+                  onPress={() => setShowAdminCode(!showAdminCode)}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                  accessibilityLabel={
+                    showAdminCode
+                      ? "Hide Admin secret code"
+                      : "Show Admin secret code"
+                  }
+                >
                   <Ionicons
-                    name="key-outline"
+                    name={
+                      showAdminCode
+                        ? "eye-off-outline"
+                        : "eye-outline"
+                    }
                     size={20}
                     color="#8993AD"
                   />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter Admin secret code"
-                    placeholderTextColor="#69738D"
-                    value={adminSecretCode}
-                    onChangeText={setAdminSecretCode}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    onSubmitEditing={handleAdminLogin}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.signInButton,
-                    loading && styles.disabledButton,
-                  ]}
-                  onPress={handleAdminLogin}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Text style={styles.signInButtonText}>
-                        Verify & Continue
-                      </Text>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    </>
-                  )}
                 </TouchableOpacity>
               </View>
-            )}
-          </View>
 
-          <View style={styles.footer}>
-            <Ionicons
-              name="lock-closed-outline"
-              size={14}
-              color="#69738D"
-            />
-            <Text style={styles.footerText}>
-              Your journey, your safety, our priority.
-            </Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
+              <TouchableOpacity
+                style={[
+                  styles.signInButton,
+                  loading && styles.disabledButton,
+                ]}
+                onPress={handleAdminLogin}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text style={styles.signInButtonText}>
+                      Verify & Continue
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.footer}>
+          <Ionicons
+            name="lock-closed-outline"
+            size={14}
+            color="#69738D"
+          />
+          <Text style={styles.footerText}>
+            Your journey, your safety, our priority.
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>
+);
 }
 
 const styles = StyleSheet.create({
@@ -747,6 +780,33 @@ const styles = StyleSheet.create({
     marginBottom: 9,
     marginTop: 3,
   },
+
+  adminInputContainer: {
+    minHeight: 54,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#5149C8",
+    backgroundColor: "#090F1E",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    gap: 11,
+    marginBottom: 17,
+  },
+
+  adminInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 14,
+    paddingVertical: 13,
+  },
+
+  adminEyeButton: {
+    padding: 5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   inputContainer: {
     minHeight: 54,
     borderRadius: 13,
