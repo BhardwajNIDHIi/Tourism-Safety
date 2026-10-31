@@ -32,7 +32,7 @@ type DemoAccount = {
 };
 
 const STORAGE_KEY = "safeTourismDemoAccounts";
-const API_BASE_URL = "http://192.168.1.35:5001/api";
+const API_BASE_URL = "http://192.168.1.36:5001/api";
 
 const TOURIST_ROUTE = "/(drawer)";
 const AGENT_ROUTE = "/(agent)";

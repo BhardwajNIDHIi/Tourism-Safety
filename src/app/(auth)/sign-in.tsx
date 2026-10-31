@@ -32,7 +32,7 @@ type AccountUser = {
   verificationStatus?: string;
 };
 
-const API_BASE_URL = "http://192.168.1.35:5001/api";
+const API_BASE_URL = "http://192.168.1.36:5001/api";
 const AGENT_VERIFICATION_CODE = "AGENT2026";
 
 const normalizeEmail = (value: string) =>

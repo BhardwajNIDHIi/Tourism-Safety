@@ -15,7 +15,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
-const API_BASE_URL = "http://192.168.1.35:5001/api";
+const API_BASE_URL = "http://192.168.1.36:5001/api";
 
 type SOSAlert = {
   _id?: string;
